@@ -192,7 +192,9 @@ class MainActivity : ComponentActivity() {
                 val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
                 val sizeIndex = it.getColumnIndex(OpenableColumns.SIZE)
                 if (nameIndex >= 0) displayName = it.getString(nameIndex) ?: displayName
-                if (sizeIndex >= 0 && !it.isNull(sizeIndex)) sizeBytes = it.getLong(sizeIndex)
+                if (sizeIndex >= 0 && !it.isNull(sizeIndex)) {
+                    sizeBytes = it.getLong(sizeIndex).takeIf { size -> size >= 0L }
+                }
             }
         }
         return displayName to sizeBytes
@@ -269,7 +271,7 @@ class MainActivity : ComponentActivity() {
                     generationRate,
                 )
             } catch (cancelled: CancellationException) {
-                statusView.text = "Generierung abgebrochen · native Abbruchanforderung gesendet"
+                statusView.text = "Generierung abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
                 statusView.text = "Generierung fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
@@ -340,7 +342,7 @@ class MainActivity : ComponentActivity() {
                 )
                 statusView.text = "CPU-Benchmark abgeschlossen · 3 Messungen"
             } catch (cancelled: CancellationException) {
-                statusView.text = "CPU-Benchmark abgebrochen · native Abbruchanforderung gesendet"
+                statusView.text = "CPU-Benchmark abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
                 statusView.text = "CPU-Benchmark fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"

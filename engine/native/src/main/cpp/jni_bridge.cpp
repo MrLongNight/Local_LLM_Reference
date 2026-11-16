@@ -260,6 +260,10 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         throwJava(env, "maxOutputTokens must be between 1 and 8192.");
         return nullptr;
     }
+    if (g_abort_requested.exchange(false, std::memory_order_acq_rel)) {
+        throwJava(env, "Generation cancelled.");
+        return nullptr;
+    }
 
     const std::string prompt = toUtf8(env, jPrompt);
     if (prompt.empty()) {
@@ -281,6 +285,13 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         return nullptr;
     }
     tokens.resize(static_cast<size_t>(tokenCount));
+
+    // Tokenization is not interruptible in llama.cpp. Observe cancellation immediately after it
+    // completes rather than starting prompt evaluation for a request that has already expired.
+    if (g_abort_requested.exchange(false, std::memory_order_acq_rel)) {
+        throwJava(env, "Generation cancelled.");
+        return nullptr;
+    }
 
     const uint32_t contextSize = llama_n_ctx(g_context);
     if (tokens.size() + static_cast<size_t>(maxOutputTokens) > contextSize) {
