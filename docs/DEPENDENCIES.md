@@ -9,6 +9,7 @@ Checked: 2026-11-16. Versions are fixed, not dynamic ranges. Dependabot checks G
 | Android Gradle Plugin | 9.5.1 | Current stable patch release checked on 2026-11-16 |
 | Gradle Wrapper | 9.9.1 | Current stable Gradle; exceeds AGP 9.5 minimum 9.6.0 |
 | JDK | 17 | Android/AGP toolchain baseline |
+| Android CLI | 1.1.16919734 | Exact version verified in CI; Google latest installer plus a fail-closed version check |
 | Android compile/target SDK | 36 | Latest stable SDK Platform package exposed by the stable SDK repository in CI |
 | Android Build Tools | 36.0.0 | Matching stable build-tools line |
 | Android NDK | 30.0.16248370 (r30 LTS) | Current NDK LTS checked on 2026-11-16 |
@@ -41,7 +42,7 @@ The workflow pins each action to an immutable full commit SHA rather than a muta
 | gradle/actions/setup-gradle | v6.4.1 | `8da46b539cd8fe6ab27ca75128919a18d757604c` |
 | actions/upload-artifact | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` |
 
-The official Android CLI bootstrap URL is currently published by Google as a `latest` installer. The installed CLI reports its actual version in every CI run; Android SDK packages themselves are installed by explicit package/version identifiers. This is the only intentionally rolling bootstrap component in the workflow and must be reviewed against Google's release notes.
+Google's official Android CLI download page currently provides the `latest` installer URL rather than an immutable versioned URL. The workflow therefore checks that the installed CLI reports exactly `1.1.16919734`; an unexpected change fails CI until the release notes and new version have been reviewed and the version pin updated. Android SDK packages are installed by explicit package/version identifiers.
 
 ## Upstream references
 
@@ -53,6 +54,7 @@ The official Android CLI bootstrap URL is currently published by Google as a `la
 - Gradle 9.9.1 checksums and releases: https://gradle.org/release-checksums/
 - Android SDK platform release notes: https://developer.android.com/tools/releases/platforms
 - Android 17 SDK setup: https://developer.android.com/about/versions/17/setup-sdk
+- Android CLI download and release notes: https://developer.android.com/tools/agents/android-cli/download, https://developer.android.com/tools/agents/android-cli/release-notes
 - Android NDK releases: https://developer.android.com/ndk/downloads
 - AndroidX Activity releases: https://developer.android.com/jetpack/androidx/releases/activity
 - JUnit releases: https://junit.org/junit5/docs/current/release-notes/
@@ -65,6 +67,6 @@ The official Android CLI bootstrap URL is currently published by Google as a `la
 A Dependabot proposal is not automatically accepted. For each update:
 1. Check the component's current stable release and official compatibility matrix.
 2. Update only the relevant pin(s), including wrapper checksums when Gradle changes.
-3. Run the clean Android build and inspect the produced APK artifact.
+3. Run the clean Android build, Android lint, unit tests and inspect the produced APK artifact.
 4. For native dependency changes, build both supported ABIs and verify an on-device smoke test before changing the pinned reference.
 5. For GitHub Actions, review the upstream release notes, resolve the official tag to its full commit SHA, and verify the commit signature before updating the workflow.
