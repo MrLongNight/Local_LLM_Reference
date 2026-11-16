@@ -1,6 +1,7 @@
 package de.mrlongnight.llmreference
 
 import android.content.Intent
+import android.app.AlertDialog
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -8,6 +9,8 @@ import android.graphics.drawable.GradientDrawable
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import android.text.InputType
 import android.view.Gravity
@@ -20,16 +23,20 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import de.mrlongnight.llmreference.benchmark.BenchmarkMetadata
 import de.mrlongnight.llmreference.benchmark.BenchmarkPlan
 import de.mrlongnight.llmreference.benchmark.BenchmarkRunner
 import de.mrlongnight.llmreference.engine.api.GenerationConfig
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
+import de.mrlongnight.llmreference.engine.api.InferenceBackend
 import de.mrlongnight.llmreference.engine.runtime.AndroidLocalInferenceEngine
 import de.mrlongnight.llmreference.engine.runtime.EngineDiagnostics
 import de.mrlongnight.llmreference.engine.runtime.InferenceEngineException
 import java.util.Locale
+import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -54,6 +61,11 @@ class MainActivity : ComponentActivity() {
     private var inferenceEngine: AndroidLocalInferenceEngine? = null
     private var selectedModel: ModelDescriptor? = null
     private var activeOperationJob: Job? = null
+    private lateinit var settingsStore: InferenceSettingsStore
+    private lateinit var modelLibraryStore: ModelLibraryStore
+    private lateinit var inferenceSettings: InferenceAppSettings
+    private var modelLoadElapsedMillis: Long? = null
+    private var lastBenchmarkCsv: String? = null
 
     private lateinit var statusView: TextView
     private lateinit var modelView: TextView
@@ -84,12 +96,22 @@ class MainActivity : ComponentActivity() {
         if (uri != null) exportDiagnostics(uri)
     }
 
+    private val benchmarkExporter = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) exportBenchmark(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         darkModeEnabled = getSharedPreferences("appearance", MODE_PRIVATE)
             .getBoolean("dark_mode", true)
+        settingsStore = InferenceSettingsStore(applicationContext)
+        modelLibraryStore = ModelLibraryStore(applicationContext)
+        inferenceSettings = settingsStore.load()
         EngineDiagnostics.initialize(applicationContext, "app")
         buildReferenceUi()
+        restoreLastModel()
     }
 
     private fun buildReferenceUi() {
@@ -141,6 +163,13 @@ class MainActivity : ComponentActivity() {
             }
         }
         modelCard.addView(selectModelButton, matchWidth())
+        val libraryButton = Button(this).apply {
+            text = "Modellbibliothek öffnen"
+            isAllCaps = false
+            minHeight = dp(48)
+            setOnClickListener { showModelLibrary() }
+        }
+        modelCard.addView(libraryButton, matchWidth(top = 8))
         content.addView(modelCard, matchWidth(bottom = 16))
 
         promptCard = sectionCard("Prompt")
@@ -308,29 +337,39 @@ class MainActivity : ComponentActivity() {
         PopupMenu(this, anchor).apply {
             menu.add("Abbruch-/Timeout-Selbsttest").apply {
                 isEnabled = selectedModel != null && activeOperationJob == null
+                setOnMenuItemClickListener { runReliabilitySelfTest(); true }
+            }
+            menu.add("Quick-Benchmark").apply {
+                isEnabled = selectedModel != null && activeOperationJob == null
+                setOnMenuItemClickListener { runBenchmark(full = false); true }
+            }
+            menu.add("Full-Benchmark").apply {
+                isEnabled = selectedModel != null && activeOperationJob == null
+                setOnMenuItemClickListener { runBenchmark(full = true); true }
+            }
+            menu.add("CPU/Vulkan-Vergleich").apply {
+                isEnabled = selectedModel != null && activeOperationJob == null
+                setOnMenuItemClickListener { runBackendComparison(); true }
+            }
+            menu.add("Benchmark-CSV exportieren").apply {
+                isEnabled = !lastBenchmarkCsv.isNullOrBlank() && activeOperationJob == null
                 setOnMenuItemClickListener {
-                    runReliabilitySelfTest()
+                    benchmarkExporter.launch("local-llm-benchmark-${System.currentTimeMillis()}.csv")
                     true
                 }
             }
-            menu.add("CPU-Benchmark").apply {
-                isEnabled = selectedModel != null && activeOperationJob == null
-                setOnMenuItemClickListener {
-                    runBenchmark()
-                    true
-                }
+            menu.add("Einstellungen").apply {
+                setOnMenuItemClickListener { showInferenceSettings(); true }
+            }
+            menu.add("Modellbibliothek").apply {
+                setOnMenuItemClickListener { showModelLibrary(); true }
             }
             menu.add(if (darkModeEnabled) "Helles Design" else "OLED-Dunkelmodus").apply {
-                setOnMenuItemClickListener {
-                    toggleDarkMode()
-                    true
-                }
+                setOnMenuItemClickListener { toggleDarkMode(); true }
             }
             menu.add("Diagnoseprotokoll exportieren (ZIP)").apply {
                 setOnMenuItemClickListener {
-                    diagnosticsExporter.launch(
-                        "local-llm-diagnostics-${System.currentTimeMillis()}.zip"
-                    )
+                    diagnosticsExporter.launch("local-llm-diagnostics-${System.currentTimeMillis()}.zip")
                     true
                 }
             }
@@ -455,21 +494,20 @@ class MainActivity : ComponentActivity() {
             statusView.text = "Bitte eine GGUF-Datei auswählen."
             return
         }
-
         try {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: SecurityException) {
-            // The opened descriptor is passed immediately; a provider may not grant persistence.
+            // Some providers grant only temporary access; the file is still used immediately.
         }
-
-        val descriptor = ModelDescriptor(
+        loadModel(ModelDescriptor(
             displayName = metadata.first,
             sourceUri = uri.toString(),
             sizeBytes = metadata.second,
-            contextTokens = 2048,
-            threads = 0,
-        )
-        loadModel(descriptor)
+            contextTokens = inferenceSettings.contextTokens,
+            threads = inferenceSettings.threads,
+            backend = inferenceSettings.backend,
+            gpuLayers = if (inferenceSettings.backend == InferenceBackend.VULKAN) inferenceSettings.gpuLayers else 0,
+        ))
     }
 
     private fun queryModelMetadata(uri: Uri): Pair<String, Long?> {
@@ -498,19 +536,44 @@ class MainActivity : ComponentActivity() {
     private fun loadModel(model: ModelDescriptor) {
         activeOperationJob?.cancel()
         setBusy(true, cancelable = false)
-        statusView.text = "Lade ${model.displayName} im isolierten Prozess …"
+        statusView.text = "Prüfe Modell und lade ${model.displayName} …"
         outputView.text = ""
 
         activeOperationJob = activityScope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    engine().loadModel(model)
+                val prepared = withContext(Dispatchers.IO) {
+                    val fingerprint = model.sha256 ?: sha256ForUri(model.sourceUri)
+                    val resolved = model.copy(sha256 = fingerprint)
+                    val started = SystemClock.elapsedRealtime()
+                    engine().loadModel(resolved)
+                    resolved to (SystemClock.elapsedRealtime() - started)
                 }
-                selectedModel = model
-                modelView.text = model.sizeBytes?.let {
-                    "${model.displayName} · ${formatBytes(it)} · Kontext ${model.contextTokens}"
-                } ?: "${model.displayName} · Kontext ${model.contextTokens}"
-                statusView.text = "Modell geladen · CPU-Referenz"
+                selectedModel = prepared.first
+                modelLoadElapsedMillis = prepared.second
+                modelLibraryStore.add(ModelLibraryEntry(
+                    displayName = prepared.first.displayName,
+                    sourceUri = prepared.first.sourceUri,
+                    sizeBytes = prepared.first.sizeBytes,
+                    sha256 = prepared.first.sha256,
+                ))
+                modelView.text = buildString {
+                    append(prepared.first.displayName)
+                    prepared.first.sizeBytes?.let { append(" · ").append(formatBytes(it)) }
+                    append(" · Kontext ").append(prepared.first.contextTokens)
+                    append(" · ").append(prepared.first.backend.name)
+                    append(" · SHA256 ").append(prepared.first.sha256?.take(12) ?: "n/a")
+                }
+                statusView.text = "Modell geladen · ${prepared.first.backend.name} · ${prepared.second} ms"
+                EngineDiagnostics.info("model", "reference_model_ready", mapOf(
+                    "model_name" to prepared.first.displayName,
+                    "model_size_bytes" to (prepared.first.sizeBytes ?: -1L),
+                    "model_load_elapsed_ms" to prepared.second,
+                    "context_tokens" to prepared.first.contextTokens,
+                    "threads" to prepared.first.threads,
+                    "backend" to prepared.first.backend.name,
+                    "gpu_layers" to prepared.first.gpuLayers,
+                    "model_sha256_prefix" to (prepared.first.sha256?.take(16) ?: "unknown"),
+                ))
             } catch (cancelled: CancellationException) {
                 statusView.text = "Modellladen abgebrochen."
                 throw cancelled
@@ -543,27 +606,30 @@ class MainActivity : ComponentActivity() {
 
         activeOperationJob = activityScope.launch {
             try {
+                val settings = inferenceSettings
                 val result = withContext(Dispatchers.IO) {
                     engine().generate(
                         prompt = prompt,
-                        config = GenerationConfig(maxOutputTokens = 64, timeoutMillis = 180_000L),
+                        config = GenerationConfig(
+                            maxOutputTokens = settings.maxOutputTokens,
+                            timeoutMillis = settings.timeoutMillis,
+                            temperature = settings.temperature,
+                            topP = settings.topP,
+                            topK = settings.topK,
+                            seed = settings.seed,
+                        ),
                     )
                 }
                 outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
-                val generationRate = if (result.generationElapsedMillis > 0L) {
+                val rate = if (result.generationElapsedMillis > 0L) {
                     result.generatedTokens * 1_000.0 / result.generationElapsedMillis
-                } else {
-                    0.0
-                }
+                } else 0.0
                 statusView.text = String.format(
                     Locale.ROOT,
-                    "Fertig · Prompt %d Tokens / %d ms · Ausgabe %d Tokens / %d ms · Gesamt %d ms · %.2f Gen tok/s",
-                    result.promptTokens,
-                    result.promptElapsedMillis,
-                    result.generatedTokens,
-                    result.generationElapsedMillis,
-                    result.elapsedMillis,
-                    generationRate,
+                    "Fertig · Prefill %d Tokens / %d ms · Ausgabe %d Tokens / %d ms · Gesamt %d ms · %.2f Gen tok/s",
+                    result.promptTokens, result.promptElapsedMillis,
+                    result.generatedTokens, result.generationElapsedMillis,
+                    result.elapsedMillis, rate,
                 )
             } catch (cancelled: CancellationException) {
                 statusView.text = "Generierung abgebrochen."
@@ -579,7 +645,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun runBenchmark() {
+    private fun runBenchmark(full: Boolean) {
         val model = selectedModel ?: run {
             statusView.text = "Zuerst ein GGUF-Modell laden."
             return
@@ -589,74 +655,52 @@ class MainActivity : ComponentActivity() {
             statusView.text = "Prompt darf nicht leer sein."
             return
         }
-
+        val settings = inferenceSettings
+        val warmups = if (full) settings.fullWarmups else settings.quickWarmups
+        val measured = if (full) settings.fullMeasurements else settings.quickMeasurements
         setBusy(true, cancelable = true)
-        statusView.text = "CPU-Benchmark läuft · 1 Warmup + 3 Messungen"
+        statusView.text = "${if (full) "Full" else "Quick"}-Benchmark · ${warmups} Warmup + ${measured} Messungen"
         outputView.text = ""
 
         activeOperationJob = activityScope.launch {
             try {
+                val runner = BenchmarkRunner()
+                val metadata = buildBenchmarkMetadata(model, prompt, settings.backend, modelLoadElapsedMillis)
                 val report = withContext(Dispatchers.IO) {
-                    BenchmarkRunner().run(
+                    runner.run(
                         engine = engine(),
                         modelDisplayName = model.displayName,
-                        backendLabel = "CPU",
+                        backendLabel = settings.backend.name,
                         plan = BenchmarkPlan(
                             prompt = prompt,
-                            maxOutputTokens = 64,
-                            warmupRuns = 1,
-                            measuredRuns = 3,
-                            timeoutMillis = 180_000L,
+                            maxOutputTokens = settings.maxOutputTokens,
+                            warmupRuns = warmups,
+                            measuredRuns = measured,
+                            timeoutMillis = settings.timeoutMillis,
+                            temperature = settings.temperature,
+                            topP = settings.topP,
+                            topK = settings.topK,
+                            seed = settings.seed,
+                            metadata = metadata.copy(
+                                maxOutputTokens = settings.maxOutputTokens,
+                                timeoutMillis = settings.timeoutMillis,
+                                temperature = settings.temperature,
+                                topP = settings.topP,
+                                topK = settings.topK,
+                                seed = settings.seed,
+                            ),
                         ),
                     )
                 }
-                report.samples.forEach { sample ->
-                    EngineDiagnostics.info("benchmark", "sample_completed", mapOf(
-                        "iteration" to sample.iteration,
-                        "prompt_tokens" to sample.promptTokens,
-                        "generated_tokens" to sample.generatedTokens,
-                        "prompt_elapsed_ms" to sample.promptElapsedMillis,
-                        "generation_elapsed_ms" to sample.generationElapsedMillis,
-                        "wall_elapsed_ms" to sample.wallElapsedMillis
-                    ))
-                }
-                EngineDiagnostics.info("benchmark", "completed", mapOf(
-                    "measured_runs" to report.measuredRuns,
-                    "average_generation_tokens_per_second" to report.averageGenerationTokensPerSecond,
-                    "median_generation_tokens_per_second" to report.medianGenerationTokensPerSecond
-                ))
-                val details = report.samples.joinToString(separator = "\n") { sample ->
-                    String.format(
-                        Locale.ROOT,
-                        "Lauf %d: Prefill %.2f tok/s · Gen %.2f tok/s · Gesamt %.2f tok/s · Prefill %d ms · Gen %d ms · Gesamt %d ms",
-                        sample.iteration,
-                        sample.promptTokensPerSecond,
-                        sample.generationTokensPerSecond,
-                        sample.wallTokensPerSecond,
-                        sample.promptElapsedMillis,
-                        sample.generationElapsedMillis,
-                        sample.wallElapsedMillis,
-                    )
-                }
-                outputView.text = String.format(
-                    Locale.ROOT,
-                    "%s\n\nMittelwert Prefill: %.2f tok/s\nMedian Prefill: %.2f tok/s\nMittelwert Generierung: %.2f tok/s\nMedian Generierung: %.2f tok/s\nMittelwert Gesamt: %.2f tok/s\nMedian Gesamt: %.2f tok/s\n\n%s",
-                    report.modelDisplayName,
-                    report.averagePromptTokensPerSecond,
-                    report.medianPromptTokensPerSecond,
-                    report.averageGenerationTokensPerSecond,
-                    report.medianGenerationTokensPerSecond,
-                    report.averageWallTokensPerSecond,
-                    report.medianWallTokensPerSecond,
-                    details,
-                )
-                statusView.text = "CPU-Benchmark abgeschlossen · 3 Messungen"
+                lastBenchmarkCsv = report.toCsv()
+                displayBenchmarkReport(report)
+                statusView.text = "${if (full) "Full" else "Quick"}-Benchmark abgeschlossen · ${report.measuredRuns} Messungen"
             } catch (cancelled: CancellationException) {
-                statusView.text = "CPU-Benchmark abgebrochen."
+                statusView.text = "Benchmark abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
                 EngineDiagnostics.error("benchmark", "failed", mapOf("error_class" to error.javaClass.simpleName))
-                statusView.text = "CPU-Benchmark fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
+                statusView.text = "Benchmark fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 if (activeOperationJob === coroutineContext[Job]) {
                     activeOperationJob = null
@@ -664,6 +708,320 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun runBackendComparison() {
+        val original = selectedModel ?: run {
+            statusView.text = "Zuerst ein GGUF-Modell laden."
+            return
+        }
+        if (promptInput.text.isNullOrBlank()) {
+            statusView.text = "Prompt darf nicht leer sein."
+            return
+        }
+        val prompt = promptInput.text.toString()
+        val settings = inferenceSettings
+        setBusy(true, cancelable = true)
+        statusView.text = "CPU/Vulkan-Vergleich startet …"
+        outputView.text = ""
+
+        activeOperationJob = activityScope.launch {
+            val csvParts = mutableListOf<String>()
+            try {
+                val runner = BenchmarkRunner()
+                val backends = listOf(InferenceBackend.CPU, InferenceBackend.VULKAN)
+                for (backend in backends) {
+                    val descriptor = original.copy(
+                        backend = backend,
+                        gpuLayers = if (backend == InferenceBackend.VULKAN) settings.gpuLayers else 0,
+                    )
+                    val loadStarted = SystemClock.elapsedRealtime()
+                    withContext(Dispatchers.IO) { engine().loadModel(descriptor) }
+                    val loadMillis = SystemClock.elapsedRealtime() - loadStarted
+                    val metadata = buildBenchmarkMetadata(descriptor, prompt, backend, loadMillis)
+                    val report = withContext(Dispatchers.IO) {
+                        runner.run(
+                            engine(), descriptor.displayName, backend.name,
+                            BenchmarkPlan(
+                                prompt = prompt,
+                                maxOutputTokens = settings.maxOutputTokens,
+                                warmupRuns = settings.quickWarmups,
+                                measuredRuns = settings.quickMeasurements,
+                                timeoutMillis = settings.timeoutMillis,
+                                temperature = settings.temperature,
+                                topP = settings.topP,
+                                topK = settings.topK,
+                                seed = settings.seed,
+                                metadata = metadata,
+                            ),
+                        )
+                    }
+                    csvParts += "# ${backend.name}\n" + report.toCsv()
+                    EngineDiagnostics.info("benchmark", "backend_comparison_completed", mapOf(
+                        "backend" to backend.name,
+                        "model_sha256_prefix" to (descriptor.sha256?.take(16) ?: "unknown"),
+                        "median_generation_tok_s" to report.medianGenerationTokensPerSecond,
+                        "model_load_elapsed_ms" to loadMillis,
+                    ))
+                }
+                lastBenchmarkCsv = csvParts.joinToString("\n")
+                outputView.text = "CPU- und Vulkan-Lauf abgeschlossen. Beide CSV-Berichte enthalten identische Prompt-/Modellfingerprints und die jeweiligen Backendparameter."
+                statusView.text = "CPU/Vulkan-Vergleich abgeschlossen"
+            } catch (cancelled: CancellationException) {
+                statusView.text = "CPU/Vulkan-Vergleich abgebrochen."
+                throw cancelled
+            } catch (error: Exception) {
+                csvParts += "# COMPARISON_ERROR\n" + (error.message ?: error.javaClass.simpleName)
+                lastBenchmarkCsv = csvParts.joinToString("\n")
+                outputView.text = "Vergleich abgebrochen: ${error.message ?: error.javaClass.simpleName}"
+                statusView.text = "CPU/Vulkan-Vergleich unvollständig"
+            } finally {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        engine().loadModel(original)
+                    }
+                }
+                if (activeOperationJob === coroutineContext[Job]) {
+                    activeOperationJob = null
+                    setBusy(false)
+                }
+            }
+        }
+    }
+
+    private suspend fun buildBenchmarkMetadata(
+        model: ModelDescriptor,
+        prompt: String,
+        backend: InferenceBackend,
+        loadMillis: Long?,
+    ): BenchmarkMetadata {
+        val nativeInfo = withContext(Dispatchers.IO) { engine().systemInfo() }
+        return BenchmarkMetadata(
+            modelFileName = model.displayName,
+            modelSha256 = model.sha256.orEmpty(),
+            modelSizeBytes = model.sizeBytes,
+            contextTokens = model.contextTokens,
+            threads = model.threads,
+            backend = backend,
+            gpuLayers = model.gpuLayers,
+            temperature = inferenceSettings.temperature,
+            topP = inferenceSettings.topP,
+            topK = inferenceSettings.topK,
+            seed = inferenceSettings.seed,
+            maxOutputTokens = inferenceSettings.maxOutputTokens,
+            timeoutMillis = inferenceSettings.timeoutMillis,
+            promptSha256 = sha256Text(prompt),
+            promptCharacters = prompt.length,
+            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
+            androidApi = Build.VERSION.SDK_INT,
+            supportedAbis = Build.SUPPORTED_ABIS.joinToString(","),
+            nativeSystemInfo = nativeInfo,
+            modelLoadElapsedMillis = loadMillis,
+        )
+    }
+
+    private fun displayBenchmarkReport(report: de.mrlongnight.llmreference.benchmark.BenchmarkReport) {
+        val samples = report.samples.joinToString("\n") { sample ->
+            String.format(
+                Locale.ROOT,
+                "Lauf %d: Prefill %.2f tok/s · Gen %.2f tok/s · Gesamt %.2f tok/s · Prefill %d ms · Gen %d ms · Gesamt %d ms",
+                sample.iteration,
+                sample.promptTokensPerSecond,
+                sample.generationTokensPerSecond,
+                sample.wallTokensPerSecond,
+                sample.promptElapsedMillis,
+                sample.generationElapsedMillis,
+                sample.wallElapsedMillis,
+            )
+        }
+        outputView.text = String.format(
+            Locale.ROOT,
+            "%s · %s\nModell-SHA256: %s\nPrompt-SHA256: %s\nKontext %d · Threads %d · Output %d · Temp %.2f · Top-p %.2f · Top-k %d · Seed %d\nLadezeit: %s ms\n\nPrefill Median %.2f tok/s\nGenerierung Median %.2f tok/s\nGesamt Median %.2f tok/s\n\n%s",
+            report.modelDisplayName,
+            report.backendLabel,
+            report.metadata.modelSha256.take(16),
+            report.metadata.promptSha256.take(16),
+            report.metadata.contextTokens,
+            report.metadata.threads,
+            report.metadata.maxOutputTokens,
+            report.metadata.temperature,
+            report.metadata.topP,
+            report.metadata.topK,
+            report.metadata.seed,
+            report.metadata.modelLoadElapsedMillis?.toString() ?: "n/a",
+            report.medianPromptTokensPerSecond,
+            report.medianGenerationTokensPerSecond,
+            report.medianWallTokensPerSecond,
+            samples,
+        )
+    }
+
+    private fun exportBenchmark(uri: Uri) {
+        val csv = lastBenchmarkCsv ?: return
+        activityScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
+                        it.write(csv)
+                    } ?: error("Benchmark-Ziel kann nicht geschrieben werden.")
+                }
+                statusView.text = "Benchmark-CSV exportiert."
+            } catch (error: Exception) {
+                statusView.text = "Benchmark-Export fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
+            }
+        }
+    }
+
+    private fun restoreLastModel() {
+        val last = modelLibraryStore.last() ?: return
+        statusView.text = "Letztes Modell wird wiederhergestellt …"
+        loadModel(ModelDescriptor(
+            displayName = last.displayName,
+            sourceUri = last.sourceUri,
+            sizeBytes = last.sizeBytes,
+            contextTokens = inferenceSettings.contextTokens,
+            threads = inferenceSettings.threads,
+            backend = inferenceSettings.backend,
+            gpuLayers = if (inferenceSettings.backend == InferenceBackend.VULKAN) inferenceSettings.gpuLayers else 0,
+            sha256 = last.sha256,
+        ))
+    }
+
+    private fun sha256ForUri(source: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = contentResolver.openInputStream(Uri.parse(source))
+            ?: error("GGUF-Datei kann für den Modellfingerprint nicht gelesen werden.")
+        input.use { stream ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                if (count > 0) digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun sha256Text(value: String): String =
+        MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+    private fun showModelLibrary() {
+        val entries = modelLibraryStore.entries()
+        if (entries.isEmpty()) {
+            Toast.makeText(this, "Noch keine Modelle gespeichert.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = entries.map { entry ->
+            entry.displayName + (entry.sizeBytes?.let { " · ${formatBytes(it)}" } ?: "")
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Modellbibliothek")
+            .setItems(labels) { _, index ->
+                val item = entries[index]
+                loadModel(ModelDescriptor(
+                    displayName = item.displayName,
+                    sourceUri = item.sourceUri,
+                    sizeBytes = item.sizeBytes,
+                    contextTokens = inferenceSettings.contextTokens,
+                    threads = inferenceSettings.threads,
+                    backend = inferenceSettings.backend,
+                    gpuLayers = if (inferenceSettings.backend == InferenceBackend.VULKAN) inferenceSettings.gpuLayers else 0,
+                    sha256 = item.sha256,
+                ))
+            }
+            .setNeutralButton("Eintrag entfernen") { _, _ ->
+                AlertDialog.Builder(this)
+                    .setTitle("Modell entfernen")
+                    .setItems(labels) { _, index ->
+                        val entry = entries[index]
+                        modelLibraryStore.remove(entry.sourceUri)
+                        runCatching {
+                            contentResolver.releasePersistableUriPermission(
+                                Uri.parse(entry.sourceUri),
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                            )
+                        }
+                        Toast.makeText(this, "${entry.displayName} entfernt.", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Abbrechen", null)
+                    .show()
+            }
+            .setNegativeButton("Schließen", null)
+            .show()
+    }
+
+    private fun showInferenceSettings() {
+        val current = inferenceSettings
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        val scroller = ScrollView(this).apply { addView(form) }
+        fun field(label: String, value: String, type: Int = InputType.TYPE_CLASS_NUMBER): EditText {
+            form.addView(TextView(this).apply { text = label; textSize = 13f; setPadding(0, dp(8), 0, dp(3)) })
+            return EditText(this).apply {
+                setSingleLine(true)
+                inputType = type
+                setText(value)
+                textSize = 16f
+                form.addView(this, matchWidth(bottom = 4))
+            }
+        }
+        val context = field("Kontext-Tokens", current.contextTokens.toString())
+        val threads = field("CPU-Threads (0 = llama.cpp Standard)", current.threads.toString())
+        val output = field("Maximale Ausgabe-Tokens", current.maxOutputTokens.toString())
+        val timeout = field("Timeout in Millisekunden", current.timeoutMillis.toString())
+        val temperature = field("Temperatur (0 = Greedy)", current.temperature.toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        val topP = field("Top-p", current.topP.toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
+        val topK = field("Top-k (0 = deaktiviert)", current.topK.toString())
+        val seed = field("Sampling-Seed", current.seed.toString())
+        val backend = field("Backend: CPU oder VULKAN", current.backend.name, InputType.TYPE_CLASS_TEXT)
+        val gpuLayers = field("Vulkan GPU-Layer (-1 = alle)", current.gpuLayers.toString(), InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED)
+        val quickWarmups = field("Quick Warmups", current.quickWarmups.toString())
+        val quickRuns = field("Quick Messläufe", current.quickMeasurements.toString())
+        val fullWarmups = field("Full Warmups", current.fullWarmups.toString())
+        val fullRuns = field("Full Messläufe", current.fullMeasurements.toString())
+
+        AlertDialog.Builder(this)
+            .setTitle("Inference- und Benchmark-Einstellungen")
+            .setView(scroller)
+            .setPositiveButton("Speichern") { _, _ ->
+                try {
+                    val parsedBackend = InferenceBackend.valueOf(backend.text.toString().trim().uppercase(Locale.ROOT))
+                    val updated = InferenceAppSettings(
+                        contextTokens = context.text.toString().toInt().also { require(it in 256..131072) },
+                        threads = threads.text.toString().toInt().also { require(it in 0..256) },
+                        maxOutputTokens = output.text.toString().toInt().also { require(it in 1..8192) },
+                        timeoutMillis = timeout.text.toString().toLong().also { require(it in 1_000L..600_000L) },
+                        temperature = temperature.text.toString().toFloat().also { require(it.isFinite() && it in 0f..2f) },
+                        topP = topP.text.toString().toFloat().also { require(it.isFinite() && it > 0f && it <= 1f) },
+                        topK = topK.text.toString().toInt().also { require(it in 0..1024) },
+                        seed = seed.text.toString().toInt().also { require(it >= 0) },
+                        backend = parsedBackend,
+                        gpuLayers = gpuLayers.text.toString().toInt().also { require(it == -1 || it in 0..256) },
+                        quickWarmups = quickWarmups.text.toString().toInt().also { require(it in 0..10) },
+                        quickMeasurements = quickRuns.text.toString().toInt().also { require(it in 1..20) },
+                        fullWarmups = fullWarmups.text.toString().toInt().also { require(it in 0..10) },
+                        fullMeasurements = fullRuns.text.toString().toInt().also { require(it in 1..50) },
+                    )
+                    settingsStore.save(updated)
+                    inferenceSettings = updated
+                    statusView.text = "Einstellungen gespeichert. Ein geladenes Modell muss für Kontext/Backend neu geladen werden."
+                    selectedModel?.let { loaded ->
+                        loadModel(loaded.copy(
+                            contextTokens = updated.contextTokens,
+                            threads = updated.threads,
+                            backend = updated.backend,
+                            gpuLayers = if (updated.backend == InferenceBackend.VULKAN) updated.gpuLayers else 0,
+                        ))
+                    }
+                } catch (error: Exception) {
+                    Toast.makeText(this, "Ungültige Einstellung: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            .setNegativeButton("Abbrechen", null)
+            .show()
     }
 
     /**
