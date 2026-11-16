@@ -17,12 +17,14 @@ This app is primarily a reproducibility/performance-comparison prototype. The ce
 - [x] Generation settings passed through IPC to JNI and llama.cpp.
 - [x] Greedy default plus temperature/top-p/top-k sampling and fixed-seed sampling.
 - [x] CPU reference path and optional Vulkan offload path using the pinned upstream llama.cpp source.
+- [x] Android API-24 Vulkan loader compatibility via the existing dynamic Vulkan-Hpp dispatcher; Vulkan stays enabled and `minSdk 24` is unchanged.
 - [x] Vulkan device enumeration and backend inventory in native system information.
 - [x] Model-default GGUF chat-template formatting, optional system prompt and multi-turn in-memory conversation. Raw completion remains the benchmark path.
 - [x] Isolated inference service, serialized worker and per-client native model lease.
 - [x] Cancellation/timeout forwarding and app self-test for long prompt, long decode, 1-second timeout and recovery generations.
 - [x] Quick and Full benchmark plans with configurable warmups and measured runs.
 - [x] CPU/Vulkan comparison reloads the same original model and captures backend-specific load time.
+- [x] CPU/Vulkan comparison verifies the original GGUF fingerprint before each backend and restores the original model even when the comparison coroutine is cancelled; failed restoration is surfaced and logged.
 - [x] Full benchmark metadata: model filename, full model SHA-256, size, prompt SHA-256, prompt character count, context, threads, output limit, timeout, sampling, seed, backend, GPU layers, target device/API/ABIs and native/backend system information.
 - [x] Benchmark CSV export contains exact metadata, per-run prefill/decode/wall values, averages and medians. The prompt is identified by hash; prompt text is not duplicated in the benchmark CSV.
 - [x] Every successful generation records the actual prompt and generated answer in a separate local interaction log, included in diagnostic ZIP exports.
@@ -34,7 +36,7 @@ This app is primarily a reproducibility/performance-comparison prototype. The ce
 
 - [x] Historical CPU timing evidence from the supplied device export: 1 warmup + 3 measured runs, mean 6.3307 tok/s and median 6.3322 tok/s; 52 generated tokens in approximately 8.20-8.23 seconds per run on the reported nubia P720F11 / Android 16. The export did not identify the model bytes or complete runtime parameters, so this is not yet a fully matched comparison scenario.
 - [x] Earlier code revisions produced successful CI/APK runs 43827449493 and 43839389835. Both predate the current combined feature set.
-- [ ] Latest combined source changes require a fresh CI build/APK artifact check.
+- [x] Latest combined source commit `2de79e7df44a48acefccab0b4ba6f00ccbadd2fe` passed GitHub Actions run `43863693397`: native build with Vulkan, Unit tests, Android lint, debug APK packaging and successful artifact upload. Artifact `local-llm-reference-debug-apk`: 58,168,798 bytes; artifact SHA-256 `368b7986b278432d8532805c6b2e5fd13dcf473738974a28fb3b3328237eea02`.
 - [ ] Physical-device cancellation/timeout self-test and app/inference log inspection.
 - [ ] Physical-device Vulkan initialization, generation and CPU/Vulkan comparison.
 - [ ] Physical device UI review: dark/light, empty/loaded, running/cancelled and enlarged font.
