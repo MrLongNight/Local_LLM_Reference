@@ -42,10 +42,11 @@ Last updated: 2026-11-16
 
 - [x] Previous llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact succeeded (run 43811994968).
 - [x] New llama.cpp pin `a946eb541a6d3051496bdcc451a0fa85772b8dfd`: exact-pin gate, unit tests, Android lint, native arm64-v8a/x86_64 builds and debug APK upload passed on commit `70658c54cd178ec302cc9cc8744cf6978987cde2` (run 43825723769).
+- [x] Latest full verification on commit `98e123d8afa949c2e562c36c424c47791d71f4ad`: exact llama.cpp pin gate, unit tests, Android lint, native arm64-v8a/x86_64 builds and debug APK upload all succeeded (run 43827449493).
 - [x] Immutable GitHub Actions SHA pins and thread-default correction built successfully (run 43813347672).
 - [x] Current full verification, including model-session ownership tests: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a2a2373e8d5059f727b559209bec20999e409290` (run 43815308166).
 - [x] APK artifact `local-llm-reference-debug-apk`: 31,880,247 bytes, SHA-256 `93d38d8fb26fe8ea9b6f01124c1708c33f08aa46abdc14174dd98d5a7bc969b5`.
-- [x] Latest verified APK artifact `local-llm-reference-debug-apk`: 31,892,358 bytes, SHA-256 `a0d860dfb2e088d171ab27cd18d028dac53c132467ef8ecb3d2c0798c56f6207` (run 43825723769; expires 2026-11-30).
+- [x] Latest verified APK artifact `local-llm-reference-debug-apk`: 31,891,529 bytes, SHA-256 `bcf5f72fa349c0231881907be1147dbbc27d5b3215eda840df3b926361c72bba` (run 43827449493 on commit `98e123d8afa949c2e562c36c424c47791d71f4ad`; expires 2026-11-30).
 - [x] User-confirmed physical-device test completed without reported errors (2026-11-16; exact device/model/scenario details were not supplied).
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
