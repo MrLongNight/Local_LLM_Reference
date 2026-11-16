@@ -209,7 +209,7 @@ class MainActivity : ComponentActivity() {
                 addView(
                     content,
                     FrameLayout.LayoutParams(
-                        minOf(resources.displayMetrics.widthPixels - dp(16), dp(760)),
+                        dp((resources.configuration.screenWidthDp - 16).coerceIn(1, 760)),
                         ViewGroup.LayoutParams.WRAP_CONTENT,
                         Gravity.TOP or Gravity.CENTER_HORIZONTAL,
                     ),
@@ -217,6 +217,19 @@ class MainActivity : ComponentActivity() {
             })
         }
         setContentView(rootScrollView)
+        rootScrollView.setOnApplyWindowInsetsListener { view, insets ->
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val safeInsets = insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars() or
+                        android.view.WindowInsets.Type.displayCutout()
+                )
+                view.setPadding(0, safeInsets.top, 0, safeInsets.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
+            }
+            insets
+        }
         applyTheme()
     }
 
