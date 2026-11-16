@@ -207,7 +207,7 @@ class MainActivity : ComponentActivity() {
         rootContent = content
         rootScrollView = ScrollView(this).apply {
             isFillViewport = true
-            clipToPadding = false
+            clipToPadding = true
             addView(FrameLayout(this@MainActivity).apply {
                 addView(
                     content,
@@ -233,6 +233,7 @@ class MainActivity : ComponentActivity() {
             }
             insets
         }
+        rootScrollView.requestApplyInsets()
         applyTheme()
     }
 
