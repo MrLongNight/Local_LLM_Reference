@@ -39,6 +39,8 @@ if(ANDROID)
         REQUIRED
     )
     set(Vulkan_INCLUDE_DIR "${_host_vulkan_include_dir}" CACHE PATH "" FORCE)
+    # Directory-level SYSTEM include is inherited by ggml-vulkan's nested target.
+    include_directories(SYSTEM "${_host_vulkan_include_dir}")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(_vulkan_android_triple "aarch64-linux-android")
     elseif(ANDROID_ABI STREQUAL "x86_64")
