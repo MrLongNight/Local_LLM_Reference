@@ -5,7 +5,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Debug
-import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -26,20 +25,19 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Process-aware structured diagnostics shared by the app and isolated inference service.
+ * Process-aware diagnostics writer shared by the app and isolated inference service.
  *
- * Each process writes its own JSON Lines file. Disk work is serialized on a bounded background
- * writer so logging from the UI thread never performs file I/O or fsync. Sensitive attributes are
- * redacted centrally before serialization; callers must still prefer metadata over user content.
+ * One compact, single-line .log file is written per process. Records are queued on a bounded
+ * background writer; the UI and inference threads never wait for disk I/O. Logs are capped and
+ * rotated to keep a device report small enough to inspect and attach to a support chat.
  */
 object EngineDiagnostics {
     private const val DIRECTORY_NAME = "diagnostics"
-    private const val MAX_FILE_BYTES = 2L * 1024L * 1024L
-    private const val TIMESTAMP_PATTERN = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
-    private const val MAX_QUEUED_RECORDS = 4_096
+    private const val MAX_FILE_BYTES = 128L * 1024L
+    private const val MAX_QUEUED_RECORDS = 256
     private const val EXPORT_FLUSH_TIMEOUT_SECONDS = 10L
+    private const val TIMESTAMP_PATTERN = "yyyy-MM-dd HH:mm:ss.SSS'Z'"
 
-    private val lock = Any()
     private val droppedRecords = AtomicLong(0L)
     private val writer = ThreadPoolExecutor(
         1,
@@ -62,23 +60,27 @@ object EngineDiagnostics {
             android.util.Log.e("EngineDiagnostics", "Could not create diagnostics directory")
             return
         }
-        synchronized(lock) {
-            logDirectory = directory
-            processName = process
+
+        processName = process
+        logDirectory = directory
+        // Remove older unbounded JSONL files for this process when adopting the capped format.
+        listOf(
+            File(directory, "$process.jsonl"),
+            File(directory, "$process.jsonl.1")
+        ).forEach { legacy ->
+            if (legacy.exists() && !legacy.delete()) {
+                android.util.Log.w("EngineDiagnostics", "Could not remove oversized legacy diagnostics file")
+            }
         }
-        info("diagnostics", "logger_initialized", mapOf(
-            "sdk_int" to Build.VERSION.SDK_INT,
-            "manufacturer" to Build.MANUFACTURER,
-            "device" to Build.DEVICE,
-            "os_release" to Build.VERSION.RELEASE,
-            "supported_abis" to Build.SUPPORTED_ABIS.joinToString(",")
+
+        info("diagnostics", "logger_ready", mapOf(
+            "sdk" to Build.VERSION.SDK_INT,
+            "device" to "${Build.MANUFACTURER} ${Build.DEVICE}",
+            "abis" to Build.SUPPORTED_ABIS.joinToString(","),
         ) + memorySnapshot(context))
     }
 
-    /**
-     * Captures process-local managed/native heap usage and system-wide memory pressure.
-     * Values are diagnostic measurements only; they are not a promise of allocatable memory.
-     */
+    /** Process heap and system-wide memory pressure at selected diagnostic boundaries. */
     fun memorySnapshot(context: Context): Map<String, Any> {
         val runtime = Runtime.getRuntime()
         val memory = ActivityManager.MemoryInfo()
@@ -86,15 +88,15 @@ object EngineDiagnostics {
         if (activityManager != null) activityManager.getMemoryInfo(memory)
 
         return buildMap {
-            put("runtime_heap_used_bytes", runtime.totalMemory() - runtime.freeMemory())
-            put("runtime_heap_committed_bytes", runtime.totalMemory())
-            put("runtime_heap_max_bytes", runtime.maxMemory())
-            put("native_heap_allocated_bytes", Debug.getNativeHeapAllocatedSize())
+            put("heap_used_bytes", runtime.totalMemory() - runtime.freeMemory())
+            put("heap_committed_bytes", runtime.totalMemory())
+            put("heap_max_bytes", runtime.maxMemory())
+            put("native_heap_bytes", Debug.getNativeHeapAllocatedSize())
             if (activityManager != null) {
-                put("system_memory_available_bytes", memory.availMem)
-                put("system_memory_total_bytes", memory.totalMem)
-                put("system_memory_threshold_bytes", memory.threshold)
-                put("system_low_memory", memory.lowMemory)
+                put("system_available_bytes", memory.availMem)
+                put("system_total_bytes", memory.totalMem)
+                put("system_threshold_bytes", memory.threshold)
+                put("low_memory", memory.lowMemory)
             }
         }
     }
@@ -113,34 +115,28 @@ object EngineDiagnostics {
         val process = processName
         val safeAttributes = DiagnosticAttributePolicy.sanitize(attributes).toMutableMap()
         val droppedBeforeRecord = droppedRecords.getAndSet(0L)
-        if (droppedBeforeRecord > 0L) {
-            safeAttributes["dropped_records_before_this_event"] = droppedBeforeRecord
-        }
+        if (droppedBeforeRecord > 0L) safeAttributes["dropped"] = droppedBeforeRecord
 
-        val callerThread = Thread.currentThread().name
-        val record = try {
-            JSONObject().apply {
-                put("timestamp_utc", timestamp())
-                put("level", level)
-                put("process", process)
-                put("thread", callerThread)
-                put("component", component)
-                put("event", event)
-                put("attributes", JSONObject().apply {
-                    safeAttributes.forEach { (key, value) -> put(key, value) }
-                })
-            }.toString() + "\n"
+        val line = try {
+            DiagnosticLogFormatter.format(
+                timestamp = timestamp(),
+                level = level,
+                process = process,
+                component = component,
+                event = event,
+                attributes = safeAttributes
+            ) + "\n"
         } catch (failure: RuntimeException) {
-            android.util.Log.e("EngineDiagnostics", "Could not encode diagnostics record", failure)
-            droppedRecords.incrementAndGet()
+            droppedRecords.addAndGet(droppedBeforeRecord + 1L)
+            android.util.Log.e("EngineDiagnostics", "Could not format diagnostics record", failure)
             return
         }
+        val bytes = line.toByteArray(Charsets.UTF_8)
 
-        val bytes = record.toByteArray(Charsets.UTF_8)
         try {
             writer.execute { appendRecord(directory, process, bytes, level, component, event) }
         } catch (_: RejectedExecutionException) {
-            droppedRecords.incrementAndGet()
+            droppedRecords.addAndGet(droppedBeforeRecord + 1L)
             android.util.Log.w("EngineDiagnostics", "Diagnostics queue full; record dropped")
         }
 
@@ -163,12 +159,10 @@ object EngineDiagnostics {
         component: String,
         event: String
     ) {
-        val target = File(directory, "$process.jsonl")
+        val target = File(directory, "$process.log")
         try {
             rotateIfNeeded(target, bytes.size.toLong())
-            FileOutputStream(target, true).use { stream ->
-                stream.write(bytes)
-            }
+            FileOutputStream(target, true).use { stream -> stream.write(bytes) }
         } catch (failure: IOException) {
             droppedRecords.incrementAndGet()
             android.util.Log.e(
@@ -193,6 +187,7 @@ object EngineDiagnostics {
         }
     }
 
+    /** Waits until all records accepted before this barrier have reached disk. */
     internal fun flushPendingWrites() {
         try {
             writer.submit {}.get(EXPORT_FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -213,20 +208,16 @@ object EngineDiagnostics {
     }.format(Date())
 
     /**
-     * Writes the app and inference process logs into one ZIP archive at the user-selected URI.
-     * The app-process queue is flushed before the snapshot. An in-flight event from the isolated
-     * process may be included in the next export, but all already-written service events are read.
+     * Exports only current and previous compact logs. The isolated inference queue is flushed over
+     * IPC before this method is called; the app process is flushed here before reading both files.
      */
     @Throws(IOException::class)
     fun exportZip(context: Context, destination: Uri): Int {
-        info("diagnostics", "export_requested", mapOf(
-            "dropped_records_since_previous_event" to droppedRecords.get()
-        ))
         flushPendingWrites()
 
         val directory = File(context.applicationContext.filesDir, DIRECTORY_NAME)
         val files = directory.listFiles()
-            ?.filter { it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.1")) }
+            ?.filter { it.isFile && (it.name.endsWith(".log") || it.name.endsWith(".log.1")) }
             ?.sortedBy { it.name }
             .orEmpty()
         val output = context.contentResolver.openOutputStream(destination, "wt")
@@ -241,19 +232,22 @@ object EngineDiagnostics {
                 exportedFiles++
             }
             val readme = """
-                Local LLM Reference diagnostics export
+                Local LLM Reference diagnostics
                 Generated UTC: ${timestamp()}
-                Android SDK: ${Build.VERSION.SDK_INT}
                 Device: ${Build.MANUFACTURER} ${Build.DEVICE}
-                Included log files: $exportedFiles
+                Included files: $exportedFiles
 
-                Format: UTF-8 JSON Lines (one structured event per line).
-                Each process writes its own log file. The active file is rotated at approximately
-                2 MiB and one previous segment is retained for export.
-                Disk writes use a bounded background queue. If it fills, dropped records are
-                counted and reported in the next successfully queued event.
-                Privacy: prompt/output text, content URIs, absolute paths, credentials and unknown
-                non-scalar attribute values are redacted before serialization.
+                Format: UTF-8 plain text, one compact event per line:
+                UTC timestamp | level (I/W/E) | process | component/event | key=value fields
+
+                Size policy: one active file up to 128 KiB plus one previous 128 KiB segment
+                per process. The app and inference process therefore contribute at most about
+                512 KiB total before ZIP overhead.
+                Disk writes use a bounded background queue of 256 records.
+                Queue saturation and disk errors are counted as dropped records.
+
+                Privacy: prompt/output content, content URIs, absolute paths and credentials are
+                redacted. Unknown non-scalar attribute values are represented as [REDACTED].
             """.trimIndent()
             zip.putNextEntry(ZipEntry("README.txt"))
             zip.write(readme.toByteArray(Charsets.UTF_8))

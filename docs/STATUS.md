@@ -6,8 +6,7 @@ Last updated: 2026-11-16
 
 - [x] Modular repository layout on `main`: app, api, runtime, native and benchmark modules.
 - [x] Platform-neutral API contracts for model metadata, generation configuration/results and inference lifecycle.
-- [x] Exact llama.cpp submodule pin at upstream commit `a946eb541a6d3051496bdcc451a0fa85772b8dfd` (verified signed upstream commit).
-- [x] llama.cpp submodule refreshed to the latest signed upstream master commit available on 2026-11-16 (`a946eb541a6d3051496bdcc451a0fa85772b8dfd`); exact-pin CI verification is pending.
+- [x] Exact llama.cpp submodule pin at upstream commit `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5` (verified signed upstream commit).
 - [x] Native CPU-only JNI baseline using the pinned upstream llama API.
 - [x] Original model descriptor access by file descriptor; no engine-owned GGUF copy/rename.
 - [x] Dedicated Android inference process and serialized worker execution.
@@ -33,7 +32,8 @@ Last updated: 2026-11-16
 - [x] Runtime concurrency test verifies 8,000 unique request IDs across eight concurrent clients.
 - [x] Model session ownership tests cover client isolation, replacement-load invalidation and blank identities.
 - [x] Persistent OLED-black default theme with manual light-mode toggle and low-glare system bars.
-- [x] Process-separated JSONL diagnostics with bounded asynchronous writes, rotation, central privacy redaction and ZIP export.
+- [x] Process-separated formatted plain-text diagnostics with bounded asynchronous writes, central privacy redaction and ZIP export.
+- [x] Logs are capped at 128 KiB active + one 128 KiB rotation per process; routine IPC/UI duplicates removed and legacy oversized JSONL removed on initialization.
 - [x] Model-load and generation boundary events capture managed/native heap and system memory-pressure snapshots.
 - [x] Diagnostic privacy policy tests cover sensitive keys, URIs, absolute paths, value limits and safe performance counters.
 

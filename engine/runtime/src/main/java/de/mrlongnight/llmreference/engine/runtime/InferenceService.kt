@@ -40,7 +40,6 @@ class InferenceService : Service() {
     override fun onCreate() {
         super.onCreate()
         EngineDiagnostics.initialize(this, "inference")
-        EngineDiagnostics.info("inference_service", "created")
         serviceMessenger = Messenger(Handler(Looper.getMainLooper()) { incoming ->
             if (incoming.what == InferenceIpc.CANCEL_GENERATION) {
                 cancelGeneration(incoming.arg1)
@@ -94,10 +93,6 @@ class InferenceService : Service() {
                     replyUnavailable(request)
                     request.recycle()
                 } else {
-                    EngineDiagnostics.info("inference_service", "request_accepted", mapOf(
-                        "request_id" to request.arg1,
-                        "command" to commandName(request.what)
-                    ))
                 }
             }
             true
@@ -161,10 +156,6 @@ class InferenceService : Service() {
 
     private fun handleRequest(message: Message) {
         val command = commandName(message.what)
-        EngineDiagnostics.info("inference_service", "request_started", mapOf(
-            "request_id" to message.arg1,
-            "command" to command
-        ))
         val response = Bundle()
         val status = try {
             if (message.what != InferenceIpc.FLUSH_DIAGNOSTICS) {
@@ -188,7 +179,6 @@ class InferenceService : Service() {
                     modelSessionOwner.requireOwner(clientId)
                     NativeLlama.nativeUnloadModel()
                     modelSessionOwner.release(clientId)
-                    EngineDiagnostics.info("model", "unloaded")
                 }
                 InferenceIpc.SYSTEM_INFO -> response.putString(
                     InferenceIpc.KEY_SYSTEM_INFO,
@@ -197,10 +187,6 @@ class InferenceService : Service() {
                 InferenceIpc.FLUSH_DIAGNOSTICS -> Unit
                 else -> error("Unsupported inference command: ${message.what}")
             }
-            EngineDiagnostics.info("inference_service", "request_completed", mapOf(
-                "request_id" to message.arg1,
-                "command" to command
-            ))
             // Flush on the inference worker only after the completion event was queued.
             if (message.what == InferenceIpc.FLUSH_DIAGNOSTICS) {
                 EngineDiagnostics.flushPendingWrites()
@@ -331,10 +317,8 @@ class InferenceService : Service() {
                 ))
             }
         }
-        EngineDiagnostics.info("inference_service", "destroyed")
         inferenceExecutor.execute {
             NativeLlama.nativeShutdown()
-            EngineDiagnostics.info("inference_service", "native_shutdown_completed")
         }
         inferenceExecutor.shutdown()
         super.onDestroy()

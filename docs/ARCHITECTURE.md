@@ -36,9 +36,13 @@ A thread count of zero is a sentinel meaning "use llama.cpp defaults". Runtime o
 
 The reference UI starts in persistent OLED dark mode: the main canvas and system bars are black, with low-glare surfaces and readable high-contrast text. The user can switch to light mode; the choice is stored in app preferences and restored on the next launch.
 
-The runtime owns process-aware structured diagnostics. The app and isolated inference service write separate UTF-8 JSON Lines files under the app-private `files/diagnostics` directory. Records include UTC timestamps, severity, process/thread, component, event and sanitized scalar attributes. Disk writes are serialized on a bounded background queue so UI actions do not wait for file I/O. Active files rotate at approximately 2 MiB, retaining one previous segment per process. Model-load and generation boundary events include managed heap, native heap and system memory-pressure snapshots.
+The runtime writes one human-readable UTF-8 `.log` file per process under the app-private `files/diagnostics` directory. Each event is one line with fixed columns: UTC timestamp, severity code, process, component/event and sorted `key=value` attributes. No second JSONL copy is kept. Lines are capped at 1,400 characters.
 
-The app exports the process logs as a ZIP through Android's document picker. Before taking the snapshot, it sends a flush-barrier IPC request to the isolated inference process; that process waits for its bounded writer queue to drain, then the app drains its own queue before reading both process files. The archive contains a README describing the format and privacy limits. Prompt/output content, content URIs, absolute paths, credentials and non-scalar values are redacted by a central policy. Events should record useful dimensions and timings, never user text or generated output.
+Disk writes use a bounded 256-record background queue; the UI and inference worker do not wait for file I/O. Per process, the active file is capped at 128 KiB and one previous segment is retained. With the app and inference processes, the log payload is capped at approximately 512 KiB total. Older oversized JSONL logs from earlier versions are removed as each process initializes its new log.
+
+Routine request lifecycle messages are not logged at every IPC hop. The service logs model-load and native generation boundaries; the client logs only exceptional transport, timeout and cancellation events. Benchmark runs retain each measured sample and one summary. This keeps diagnostic signal while removing duplicate queue/accepted/started/completed notifications.
+
+The app exports compact process logs as a ZIP through Android's document picker. Before taking the snapshot, it flushes the isolated inference writer over IPC and then flushes the app writer. Prompt/output content, content URIs, absolute paths, credentials and non-scalar values are redacted centrally. Load/generation boundaries include managed heap, native heap and system memory-pressure snapshots.
 
 ## Timing semantics
 

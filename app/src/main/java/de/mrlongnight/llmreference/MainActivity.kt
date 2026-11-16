@@ -75,7 +75,6 @@ class MainActivity : ComponentActivity() {
         darkModeEnabled = getSharedPreferences("appearance", MODE_PRIVATE)
             .getBoolean("dark_mode", true)
         EngineDiagnostics.initialize(applicationContext, "app")
-        EngineDiagnostics.info("ui", "activity_created", mapOf("dark_mode" to darkModeEnabled))
         buildReferenceUi()
     }
 
@@ -293,7 +292,6 @@ class MainActivity : ComponentActivity() {
                     diagnosticsEngine.flushRemoteDiagnostics()
                     EngineDiagnostics.exportZip(applicationContext, uri)
                 }
-                EngineDiagnostics.info("ui", "diagnostics_exported", mapOf("file_count" to count))
                 statusView.text = "Diagnoseprotokoll exportiert · $count Logdateien"
             } catch (error: Exception) {
                 EngineDiagnostics.error("ui", "diagnostics_export_failed", mapOf(
@@ -314,10 +312,6 @@ class MainActivity : ComponentActivity() {
 
     private fun onModelSelected(uri: Uri) {
         val metadata = queryModelMetadata(uri)
-        EngineDiagnostics.info("model_picker", "model_selected", mapOf(
-            "file_name_extension" to metadata.first.substringAfterLast('.', "").lowercase(Locale.ROOT),
-            "size_bytes" to metadata.second
-        ))
         if (!metadata.first.endsWith(".gguf", ignoreCase = true)) {
             statusView.text = "Bitte eine GGUF-Datei auswählen."
             return
@@ -364,11 +358,6 @@ class MainActivity : ComponentActivity() {
 
     private fun loadModel(model: ModelDescriptor) {
         activeOperationJob?.cancel()
-        EngineDiagnostics.info("model", "load_started", mapOf(
-            "size_bytes" to model.sizeBytes,
-            "context_tokens" to model.contextTokens,
-            "threads_requested" to model.threads
-        ))
         setBusy(true, cancelable = false)
         statusView.text = "Lade ${model.displayName} im isolierten Prozess …"
         outputView.text = ""
@@ -383,17 +372,11 @@ class MainActivity : ComponentActivity() {
                     "${model.displayName} · ${formatBytes(it)} · Kontext ${model.contextTokens}"
                 } ?: "${model.displayName} · Kontext ${model.contextTokens}"
                 statusView.text = "Modell geladen · CPU-Referenz"
-                EngineDiagnostics.info("model", "load_completed", mapOf(
-                    "context_tokens" to model.contextTokens,
-                    "size_bytes" to model.sizeBytes
-                ))
             } catch (cancelled: CancellationException) {
-                EngineDiagnostics.warn("model", "load_cancelled")
                 statusView.text = "Modellladen abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
                 selectedModel = null
-                EngineDiagnostics.error("model", "load_failed", mapOf("error_class" to error.javaClass.simpleName))
                 statusView.text = "Modellladen fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 if (activeOperationJob === coroutineContext[Job]) {
@@ -415,7 +398,6 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        EngineDiagnostics.info("generation", "started", mapOf("prompt_characters" to prompt.length, "max_output_tokens" to 64))
         setBusy(true, cancelable = true)
         statusView.text = "Generierung läuft · ${model.displayName}"
         outputView.text = ""
@@ -429,13 +411,6 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
-                EngineDiagnostics.info("generation", "completed", mapOf(
-                    "prompt_tokens" to result.promptTokens,
-                    "generated_tokens" to result.generatedTokens,
-                    "prompt_elapsed_ms" to result.promptElapsedMillis,
-                    "generation_elapsed_ms" to result.generationElapsedMillis,
-                    "native_elapsed_ms" to result.elapsedMillis
-                ))
                 val generationRate = if (result.generationElapsedMillis > 0L) {
                     result.generatedTokens * 1_000.0 / result.generationElapsedMillis
                 } else {
@@ -452,11 +427,9 @@ class MainActivity : ComponentActivity() {
                     generationRate,
                 )
             } catch (cancelled: CancellationException) {
-                EngineDiagnostics.warn("generation", "cancelled")
                 statusView.text = "Generierung abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
-                EngineDiagnostics.error("generation", "failed", mapOf("error_class" to error.javaClass.simpleName))
                 statusView.text = "Generierung fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 if (activeOperationJob === coroutineContext[Job]) {
@@ -478,12 +451,6 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        EngineDiagnostics.info("benchmark", "started", mapOf(
-            "prompt_characters" to prompt.length,
-            "warmup_runs" to 1,
-            "measured_runs" to 3,
-            "max_output_tokens" to 64
-        ))
         setBusy(true, cancelable = true)
         statusView.text = "CPU-Benchmark läuft · 1 Warmup + 3 Messungen"
         outputView.text = ""
@@ -546,7 +513,6 @@ class MainActivity : ComponentActivity() {
                 )
                 statusView.text = "CPU-Benchmark abgeschlossen · 3 Messungen"
             } catch (cancelled: CancellationException) {
-                EngineDiagnostics.warn("benchmark", "cancelled")
                 statusView.text = "CPU-Benchmark abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
