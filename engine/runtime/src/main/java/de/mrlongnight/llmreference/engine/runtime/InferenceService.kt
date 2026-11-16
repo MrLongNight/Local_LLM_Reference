@@ -4,32 +4,71 @@ import android.app.Service
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.ParcelFileDescriptor
 import de.mrlongnight.llmreference.engine.nativebridge.NativeLlama
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Runs all native model work in a dedicated Android process and a single worker thread.
- * The app process never calls JNI directly.
+ * Binder messages are dispatched on the main thread; native work is serialized on a dedicated
+ * executor in the isolated :llm_inference process. This lets CANCEL_GENERATION reach the native
+ * abort callback while llama.cpp is busy on the worker thread.
  */
 class InferenceService : Service() {
-    private lateinit var workerThread: HandlerThread
+    private val activeRequestId = AtomicInteger(0)
+    private val pendingRequestIds = ConcurrentHashMap.newKeySet<Int>()
+    private val cancelledRequestIds = ConcurrentHashMap.newKeySet<Int>()
+    private val inferenceExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "LocalLLM-Inference")
+    }
+
     private lateinit var serviceMessenger: Messenger
 
     override fun onCreate() {
         super.onCreate()
-        workerThread = HandlerThread("LocalLLM-Inference").apply { start() }
-        serviceMessenger = Messenger(object : Handler(workerThread.looper) {
-            override fun handleMessage(message: Message) {
-                handleRequest(message)
+        serviceMessenger = Messenger(Handler(Looper.getMainLooper()) { incoming ->
+            if (incoming.what == InferenceIpc.CANCEL_GENERATION) {
+                cancelGeneration(incoming.arg1)
+            } else {
+                // Messenger recycles its incoming Message after handleMessage returns.
+                val request = Message.obtain(incoming)
+                pendingRequestIds.add(request.arg1)
+                inferenceExecutor.execute {
+                    try {
+                        if (cancelledRequestIds.remove(request.arg1)) {
+                            return@execute
+                        }
+                        activeRequestId.set(request.arg1)
+                        handleRequest(request)
+                    } finally {
+                        activeRequestId.compareAndSet(request.arg1, 0)
+                        pendingRequestIds.remove(request.arg1)
+                        cancelledRequestIds.remove(request.arg1)
+                        request.recycle()
+                    }
+                }
             }
+            true
         })
     }
 
     override fun onBind(intent: Intent?): IBinder = serviceMessenger.binder
+
+    private fun cancelGeneration(requestId: Int) {
+        if (requestId <= 0 || !pendingRequestIds.contains(requestId)) return
+        if (activeRequestId.get() == requestId) {
+            // JNI abort is lock-free and safe to call concurrently with nativeGenerate().
+            NativeLlama.nativeAbortGeneration()
+        } else {
+            // The request is queued but has not entered the native worker yet.
+            cancelledRequestIds.add(requestId)
+        }
+    }
 
     private fun handleRequest(message: Message) {
         val response = Bundle()
@@ -63,6 +102,8 @@ class InferenceService : Service() {
             message.replyTo?.send(reply)
         } catch (_: Exception) {
             // The client may have cancelled or its process may have gone away.
+        } finally {
+            reply.recycle()
         }
     }
 
@@ -96,7 +137,9 @@ class InferenceService : Service() {
     }
 
     override fun onDestroy() {
-        workerThread.quitSafely()
+        // Queue native cleanup behind any in-flight operation; never free a context concurrently.
+        inferenceExecutor.execute { NativeLlama.nativeShutdown() }
+        inferenceExecutor.shutdown()
         super.onDestroy()
     }
 }
