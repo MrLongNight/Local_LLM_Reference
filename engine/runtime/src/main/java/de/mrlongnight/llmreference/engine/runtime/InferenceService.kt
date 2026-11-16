@@ -234,7 +234,7 @@ class InferenceService : Service() {
         EngineDiagnostics.info("model", "native_load_started", mapOf(
             "context_tokens" to contextTokens,
             "threads_requested" to threads
-        ))
+        ) + EngineDiagnostics.memorySnapshot(this))
         @Suppress("DEPRECATION")
         val descriptor = if (android.os.Build.VERSION.SDK_INT >= 33) {
             data.getParcelable(InferenceIpc.KEY_DESCRIPTOR, ParcelFileDescriptor::class.java)
@@ -249,7 +249,7 @@ class InferenceService : Service() {
             "elapsed_ms" to (SystemClock.elapsedRealtime() - startedAt),
             "context_tokens" to contextTokens,
             "threads_requested" to threads
-        ))
+        ) + EngineDiagnostics.memorySnapshot(this))
     }
 
     private fun generate(requestId: Int, data: Bundle, response: Bundle) {
@@ -273,7 +273,7 @@ class InferenceService : Service() {
             "request_id" to requestId,
             "prompt_characters" to prompt.length,
             "max_output_tokens" to maxOutputTokens
-        ))
+        ) + EngineDiagnostics.memorySnapshot(this))
 
         try {
             val text = NativeLlama.nativeGenerate(prompt, maxOutputTokens)
@@ -297,7 +297,7 @@ class InferenceService : Service() {
                 "generation_elapsed_ms" to generationElapsed,
                 "native_elapsed_ms" to nativeElapsed,
                 "service_elapsed_ms" to (SystemClock.elapsedRealtime() - startedAt)
-            ))
+            ) + EngineDiagnostics.memorySnapshot(this))
         } catch (error: Exception) {
             EngineDiagnostics.warn("generation", "native_generation_interrupted", mapOf(
                 "request_id" to requestId,

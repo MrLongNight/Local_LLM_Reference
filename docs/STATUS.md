@@ -33,6 +33,7 @@ Last updated: 2026-11-16
 - [x] Model session ownership tests cover client isolation, replacement-load invalidation and blank identities.
 - [x] Persistent OLED-black default theme with manual light-mode toggle and low-glare system bars.
 - [x] Process-separated JSONL diagnostics with bounded asynchronous writes, rotation, central privacy redaction and ZIP export.
+- [x] Model-load and generation boundary events capture managed/native heap and system memory-pressure snapshots.
 - [x] Diagnostic privacy policy tests cover sensitive keys, URIs, absolute paths, value limits and safe performance counters.
 
 ## Verified

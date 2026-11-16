@@ -29,8 +29,11 @@ The API and benchmark source code contains no Android framework types. Both are 
 - Native timing separates prompt prefill from token generation. End-to-end wall timing includes tokenizer, IPC and the full request.
 - Benchmark runner provides warmups, repeated measured samples, native prefill throughput, native generation throughput and end-to-end throughput. Reports contain timing/token counts only, not prompt or generated text.
 - When `threads=0`, llama.cpp's own platform default is retained; explicit thread counts override both context and batch thread pools.
+- The reference UI starts in persistent OLED-black dark mode, with a manual light-mode switch.
+- Structured process-separated diagnostics are stored as JSONL with bounded background writes, rotation, sensitive-data redaction and ZIP export from the UI.
+- Load and generation diagnostics include managed/native heap and system memory-pressure snapshots, alongside request IDs and stage timings.
 
-The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. CI verifies unit tests, Android lint, native builds for `arm64-v8a` and `x86_64`, debug APK packaging and artifact upload. Real-device model loading, generation, cancellation and benchmark results remain to be verified.
+The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. CI verifies unit tests, Android lint, native builds for `arm64-v8a` and `x86_64`, debug APK packaging and artifact upload. A physical-device test has been reported successful by the user on 2026-11-16; cancellation/timeout edge cases and repeatable performance measurements remain separate verification items.
 
 ## Build
 

@@ -1,8 +1,10 @@
 package de.mrlongnight.llmreference.engine.runtime
 
+import android.app.ActivityManager
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Debug
 import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.File
@@ -67,8 +69,34 @@ object EngineDiagnostics {
         info("diagnostics", "logger_initialized", mapOf(
             "sdk_int" to Build.VERSION.SDK_INT,
             "manufacturer" to Build.MANUFACTURER,
-            "device" to Build.DEVICE
-        ))
+            "device" to Build.DEVICE,
+            "os_release" to Build.VERSION.RELEASE,
+            "supported_abis" to Build.SUPPORTED_ABIS.joinToString(",")
+        ) + memorySnapshot(context))
+    }
+
+    /**
+     * Captures process-local managed/native heap usage and system-wide memory pressure.
+     * Values are diagnostic measurements only; they are not a promise of allocatable memory.
+     */
+    fun memorySnapshot(context: Context): Map<String, Any> {
+        val runtime = Runtime.getRuntime()
+        val memory = ActivityManager.MemoryInfo()
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        if (activityManager != null) activityManager.getMemoryInfo(memory)
+
+        return buildMap {
+            put("runtime_heap_used_bytes", runtime.totalMemory() - runtime.freeMemory())
+            put("runtime_heap_committed_bytes", runtime.totalMemory())
+            put("runtime_heap_max_bytes", runtime.maxMemory())
+            put("native_heap_allocated_bytes", Debug.getNativeHeapAllocatedSize())
+            if (activityManager != null) {
+                put("system_memory_available_bytes", memory.availMem)
+                put("system_memory_total_bytes", memory.totalMem)
+                put("system_memory_threshold_bytes", memory.threshold)
+                put("system_low_memory", memory.lowMemory)
+            }
+        }
     }
 
     fun info(component: String, event: String, attributes: Map<String, Any?> = emptyMap()) =
@@ -142,12 +170,14 @@ object EngineDiagnostics {
                 stream.write(bytes)
             }
         } catch (failure: IOException) {
+            droppedRecords.incrementAndGet()
             android.util.Log.e(
                 "EngineDiagnostics",
                 "Could not append $level $component/$event diagnostics record",
                 failure
             )
         } catch (failure: RuntimeException) {
+            droppedRecords.incrementAndGet()
             android.util.Log.e("EngineDiagnostics", "Diagnostics writer failed", failure)
         }
     }
