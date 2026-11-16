@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class InferenceService : Service() {
     private val activeRequestId = AtomicInteger(0)
+    private val requestStateLock = Any()
     private val pendingRequestIds = ConcurrentHashMap.newKeySet<Int>()
     private val cancelledRequestIds = ConcurrentHashMap.newKeySet<Int>()
     private val inferenceExecutor = Executors.newSingleThreadExecutor { runnable ->
@@ -59,13 +60,16 @@ class InferenceService : Service() {
     override fun onBind(intent: Intent?): IBinder = serviceMessenger.binder
 
     private fun cancelGeneration(requestId: Int) {
-        if (requestId <= 0 || !pendingRequestIds.contains(requestId)) return
-        if (activeRequestId.get() == requestId) {
-            // JNI abort is lock-free and safe to call concurrently with nativeGenerate().
-            NativeLlama.nativeAbortGeneration()
-        } else {
-            // The request is queued but has not entered the native worker yet.
-            cancelledRequestIds.add(requestId)
+        if (requestId <= 0) return
+        synchronized(requestStateLock) {
+            if (!pendingRequestIds.contains(requestId)) return
+            if (activeRequestId.get() == requestId) {
+                // JNI abort is lock-free and safe to call concurrently with nativeGenerate().
+                NativeLlama.nativeAbortGeneration()
+            } else {
+                // The request is queued but has not entered the native worker yet.
+                cancelledRequestIds.add(requestId)
+            }
         }
     }
 
@@ -125,16 +129,16 @@ class InferenceService : Service() {
 
     private fun generate(requestId: Int, data: Bundle, response: Bundle) {
         NativeLlama.nativeBeginGeneration()
-        if (cancelledRequestIds.remove(requestId)) {
-            error("Generation cancelled before native execution.")
+        synchronized(requestStateLock) {
+            if (cancelledRequestIds.remove(requestId)) {
+                error("Generation cancelled before native execution.")
+            }
+            // Publish the active ID atomically with the queued-cancellation check. The
+            // cancellation handler uses the same lock, so it cannot miss this transition.
+            activeRequestId.set(requestId)
         }
 
-        activeRequestId.set(requestId)
         try {
-            // Check again after publishing the active ID to close the queue/start race.
-            if (cancelledRequestIds.remove(requestId)) {
-                NativeLlama.nativeAbortGeneration()
-            }
             val prompt = data.getString(InferenceIpc.KEY_PROMPT)
                 ?: error("Missing prompt.")
             val maxOutputTokens = data.getInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, 256)
@@ -153,7 +157,9 @@ class InferenceService : Service() {
             )
             response.putLong(InferenceIpc.KEY_ELAPSED_MILLIS, NativeLlama.nativeLastElapsedMillis())
         } finally {
-            activeRequestId.compareAndSet(requestId, 0)
+            synchronized(requestStateLock) {
+                activeRequestId.compareAndSet(requestId, 0)
+            }
         }
     }
 
