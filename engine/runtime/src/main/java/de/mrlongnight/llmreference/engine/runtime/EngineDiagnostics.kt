@@ -67,7 +67,7 @@ object EngineDiagnostics {
         attributes: Map<String, Any?>
     ) {
         val directory = logDirectory ?: return
-        val target = File(directory, "$" + "processName.jsonl")
+        val target = File(directory, "${processName}.jsonl")
         try {
             val record = JSONObject().apply {
                 put("timestamp_utc", timestamp())
@@ -95,7 +95,7 @@ object EngineDiagnostics {
                     else -> android.util.Log.INFO
                 },
                 "EngineDiagnostics",
-                "$" + "component/$" + "event"
+                "${component}/${event}"
             )
         } catch (failure: IOException) {
             android.util.Log.e("EngineDiagnostics", "Could not append diagnostics record", failure)
