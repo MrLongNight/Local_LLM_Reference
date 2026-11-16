@@ -128,7 +128,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
         EngineDiagnostics.interaction(
             modelName = loadedModelName ?: "unknown",
             backend = loadedBackend,
-            prompt = if (config.chatMessages.isEmpty()) prompt else config.chatMessages.joinToString("\\n") { "${it.role}: ${it.content}" },
+            prompt = if (config.chatMessages.isEmpty()) prompt else config.chatMessages.joinToString("\n") { "${it.role}: ${it.content}" },
             answer = completed.text,
             promptTokens = completed.promptTokens,
             generatedTokens = completed.generatedTokens,
