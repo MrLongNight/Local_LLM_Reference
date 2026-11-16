@@ -42,7 +42,7 @@ Disk writes use a bounded 256-record background queue; the UI and inference work
 
 Routine request lifecycle messages are not logged at every IPC hop. The service logs model-load and native generation boundaries; the client logs only exceptional transport, timeout and cancellation events. Benchmark runs retain each measured sample and one summary. This keeps diagnostic signal while removing duplicate queue/accepted/started/completed notifications.
 
-The app exports compact process logs as a ZIP through Android's document picker. Before taking the snapshot, it flushes the isolated inference writer over IPC and then flushes the app writer. Prompt/output content, content URIs, absolute paths, credentials and non-scalar values are redacted centrally. Load/generation boundaries include managed heap, native heap and system memory-pressure snapshots. See [LOGGING.md](LOGGING.md) for the line grammar, event catalog and export workflow.
+The app exports compact process logs as a ZIP through Android's document picker. Before taking the snapshot, it flushes the isolated inference writer over IPC and then flushes the app writer. Event-log attributes centrally redact prompt/output text, content URIs, absolute paths, credentials and non-scalar values. The separate `interactions.log` intentionally retains actual prompts and generated answers for reproducibility; it is local-only, size-capped and included in diagnostic ZIP exports. Load/generation boundaries include managed heap, native heap and system memory-pressure snapshots. See [LOGGING.md](LOGGING.md) for the line grammar, event catalog and export workflow.
 
 ## Timing semantics
 
