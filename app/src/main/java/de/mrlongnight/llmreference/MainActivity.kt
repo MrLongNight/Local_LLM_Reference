@@ -3,6 +3,8 @@ package de.mrlongnight.llmreference
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
@@ -13,6 +15,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -58,6 +61,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var exportLogsButton: Button
     private lateinit var rootScrollView: ScrollView
     private lateinit var rootContent: LinearLayout
+    private lateinit var pageTitleView: TextView
+    private lateinit var pageSubtitleView: TextView
+    private lateinit var modelCard: LinearLayout
+    private lateinit var promptCard: LinearLayout
+    private lateinit var statusCard: LinearLayout
+    private lateinit var outputCard: LinearLayout
+    private val surfaceCards = mutableListOf<LinearLayout>()
     private var darkModeEnabled = true
 
     private val modelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -81,78 +91,107 @@ class MainActivity : ComponentActivity() {
     private fun buildReferenceUi() {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
+            setPadding(dp(20), dp(24), dp(20), dp(32))
         }
 
-        content.addView(TextView(this).apply {
+        pageTitleView = TextView(this).apply {
             text = "Local LLM Reference"
-            textSize = 24f
-        }, matchWidth())
-        content.addView(TextView(this).apply {
-            text = "GGUF completion test · CPU reference · isolated inference process"
-            textSize = 13f
-        }, matchWidth())
+            textSize = 27f
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        content.addView(pageTitleView, matchWidth())
 
+        pageSubtitleView = TextView(this).apply {
+            text = "Lokale GGUF-Modelle laden, testen und vergleichen"
+            textSize = 14f
+        }
+        content.addView(pageSubtitleView, matchWidth(bottom = 20))
+
+        val utilityRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         themeButton = Button(this).apply {
+            isAllCaps = false
+            minHeight = dp(48)
             setOnClickListener { toggleDarkMode() }
         }
-        content.addView(themeButton, matchWidth())
-
         exportLogsButton = Button(this).apply {
-            text = "Diagnoseprotokoll exportieren (ZIP)"
+            text = "Logs exportieren"
+            isAllCaps = false
+            minHeight = dp(48)
             setOnClickListener {
                 diagnosticsExporter.launch("local-llm-diagnostics-${System.currentTimeMillis()}.zip")
             }
         }
-        content.addView(exportLogsButton, matchWidth())
+        utilityRow.addView(themeButton, weightedWidth(1f, end = 8))
+        utilityRow.addView(exportLogsButton, weightedWidth(1f))
+        content.addView(utilityRow, matchWidth(bottom = 20))
 
+        modelCard = sectionCard("Modell")
+        modelView = TextView(this).apply {
+            text = "Noch kein GGUF-Modell ausgewählt"
+            textSize = 14f
+            setPadding(0, dp(4), 0, dp(12))
+        }
+        modelCard.addView(modelView, matchWidth())
         selectModelButton = Button(this).apply {
             text = "GGUF-Modell auswählen"
+            isAllCaps = false
+            minHeight = dp(52)
             setOnClickListener {
                 modelPicker.launch(arrayOf("application/octet-stream", "application/x-gguf", "*/*"))
             }
         }
-        content.addView(selectModelButton, matchWidth())
+        modelCard.addView(selectModelButton, matchWidth())
+        content.addView(modelCard, matchWidth(bottom = 16))
 
-        modelView = TextView(this).apply {
-            text = "Kein Modell geladen"
-            textSize = 14f
-        }
-        content.addView(modelView, matchWidth())
-
-        content.addView(TextView(this).apply {
-            text = "Prompt (direkte Completion, ohne Chat-Template)"
-            textSize = 14f
+        promptCard = sectionCard("Prompt testen")
+        promptCard.addView(TextView(this).apply {
+            text = "Direkte Completion · ohne Chat-Template"
+            textSize = 13f
+            setPadding(0, 0, 0, dp(10))
         }, matchWidth())
-
         promptInput = EditText(this).apply {
-            minLines = 3
-            maxLines = 8
-            gravity = Gravity.TOP
+            minLines = 4
+            maxLines = 10
+            gravity = Gravity.TOP or Gravity.START
+            textSize = 16f
+            setPadding(dp(14), dp(12), dp(14), dp(12))
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             setText("Explain in one short paragraph what a local language model does.")
         }
-        content.addView(promptInput, matchWidth())
+        promptCard.addView(promptInput, matchWidth(bottom = 12))
 
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         generateButton = Button(this).apply {
-            text = "Generieren (64 Tokens)"
+            text = "Generieren"
+            isAllCaps = false
+            minHeight = dp(52)
             isEnabled = false
             setOnClickListener { generate() }
         }
-        content.addView(generateButton, matchWidth())
-
         benchmarkButton = Button(this).apply {
-            text = "CPU-Benchmark (1 Warmup + 3 Läufe)"
+            text = "CPU-Benchmark"
+            isAllCaps = false
+            minHeight = dp(52)
             isEnabled = false
             setOnClickListener { runBenchmark() }
         }
-        content.addView(benchmarkButton, matchWidth())
+        actionRow.addView(generateButton, weightedWidth(1f, end = 8))
+        actionRow.addView(benchmarkButton, weightedWidth(1f))
+        promptCard.addView(actionRow, matchWidth())
 
         cancelButton = Button(this).apply {
             text = "Lauf abbrechen"
-            isEnabled = false
+            isAllCaps = false
+            minHeight = dp(48)
+            visibility = View.GONE
             setOnClickListener {
                 EngineDiagnostics.warn("ui", "cancel_requested")
                 statusView.text = "Abbruch angefordert …"
@@ -160,34 +199,97 @@ class MainActivity : ComponentActivity() {
                 activeOperationJob?.cancel()
             }
         }
-        content.addView(cancelButton, matchWidth())
+        promptCard.addView(cancelButton, matchWidth(top = 8))
+        content.addView(promptCard, matchWidth(bottom = 16))
 
+        statusCard = sectionCard("Status")
         statusView = TextView(this).apply {
-            text = "Bereit"
+            text = "Bereit · Modell auswählen, um zu starten"
             textSize = 14f
+            setPadding(0, dp(2), 0, 0)
+            minHeight = dp(28)
         }
-        content.addView(statusView, matchWidth())
+        statusCard.addView(statusView, matchWidth())
+        content.addView(statusCard, matchWidth(bottom = 16))
 
-        content.addView(TextView(this).apply {
-            text = "Ausgabe / Benchmark-Ergebnis"
-            textSize = 16f
-        }, matchWidth())
-
+        outputCard = sectionCard("Ergebnis")
         outputView = TextView(this).apply {
             text = "Noch keine Ausgabe"
-            textSize = 14f
+            textSize = 15f
+            setLineSpacing(dp(3).toFloat(), 1f)
             setTextIsSelectable(true)
+            setPadding(0, dp(2), 0, 0)
         }
-        content.addView(outputView, matchWidth())
+        outputCard.addView(outputView, matchWidth())
+        content.addView(outputCard, matchWidth())
 
         rootContent = content
         rootScrollView = ScrollView(this).apply {
             isFillViewport = true
-            addView(content)
+            clipToPadding = false
+            addView(FrameLayout(this@MainActivity).apply {
+                addView(
+                    content,
+                    FrameLayout.LayoutParams(
+                        minOf(resources.displayMetrics.widthPixels - dp(16), dp(760)),
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+                    ),
+                )
+            })
         }
         setContentView(rootScrollView)
         applyTheme()
     }
+
+    private fun sectionCard(title: String): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(18))
+            background = roundedSurface(Color.BLACK, Color.DKGRAY)
+        }
+        card.addView(TextView(this).apply {
+            text = title
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(10))
+        }, matchWidth())
+        surfaceCards += card
+        return card
+    }
+
+    private fun roundedSurface(fill: Int, stroke: Int): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(18).toFloat()
+            setColor(fill)
+            setStroke(dp(1), stroke)
+        }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun matchWidth(
+        top: Int = 0,
+        bottom: Int = 0,
+    ): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            if (top != 0 || bottom != 0) {
+                topMargin = dp(top)
+                bottomMargin = dp(bottom)
+            }
+        }
+
+    private fun weightedWidth(
+        weight: Float,
+        end: Int = 0,
+    ): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, weight).apply {
+            if (end != 0) marginEnd = dp(end)
+        }
 
     private data class ThemePalette(
         val background: Int,
@@ -197,6 +299,8 @@ class MainActivity : ComponentActivity() {
         val accent: Int,
         val inputTint: Int,
         val systemBar: Int,
+        val cardStroke: Int,
+        val primaryTextOnAccent: Int,
     )
 
     private fun toggleDarkMode() {
@@ -212,31 +316,40 @@ class MainActivity : ComponentActivity() {
         val palette = if (darkModeEnabled) {
             ThemePalette(
                 background = Color.BLACK,
-                surface = Color.rgb(11, 14, 19),
-                text = Color.rgb(232, 237, 244),
-                secondaryText = Color.rgb(164, 176, 190),
+                surface = Color.rgb(16, 20, 27),
+                text = Color.rgb(235, 239, 245),
+                secondaryText = Color.rgb(163, 174, 188),
                 accent = Color.rgb(158, 198, 255),
                 inputTint = Color.rgb(158, 198, 255),
                 systemBar = Color.BLACK,
+                cardStroke = Color.rgb(43, 51, 63),
+                primaryTextOnAccent = Color.rgb(8, 14, 22),
             )
         } else {
             ThemePalette(
-                background = Color.rgb(246, 248, 251),
+                background = Color.rgb(244, 247, 251),
                 surface = Color.WHITE,
-                text = Color.rgb(20, 31, 43),
-                secondaryText = Color.rgb(75, 91, 108),
+                text = Color.rgb(24, 34, 48),
+                secondaryText = Color.rgb(77, 91, 108),
                 accent = Color.rgb(20, 86, 165),
                 inputTint = Color.rgb(20, 86, 165),
                 systemBar = Color.rgb(235, 240, 246),
+                cardStroke = Color.rgb(218, 225, 234),
+                primaryTextOnAccent = Color.WHITE,
             )
         }
 
         rootScrollView.setBackgroundColor(palette.background)
         rootContent.setBackgroundColor(palette.background)
         window.decorView.setBackgroundColor(palette.background)
+        surfaceCards.forEach { it.background = roundedSurface(palette.surface, palette.cardStroke) }
 
         fun tint(view: View) {
             when (view) {
+                generateButton -> {
+                    generateButton.setTextColor(palette.primaryTextOnAccent)
+                    generateButton.backgroundTintList = ColorStateList.valueOf(palette.accent)
+                }
                 is Button -> {
                     view.setTextColor(palette.accent)
                     view.backgroundTintList = ColorStateList.valueOf(palette.surface)
@@ -248,10 +361,9 @@ class MainActivity : ComponentActivity() {
                 }
                 is TextView -> {
                     view.setTextColor(
-                        if (view === statusView || view === modelView) {
-                            palette.secondaryText
-                        } else {
-                            palette.text
+                        when (view) {
+                            pageSubtitleView, statusView, modelView -> palette.secondaryText
+                            else -> palette.text
                         }
                     )
                 }
@@ -261,14 +373,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         tint(rootContent)
-        themeButton.text = if (darkModeEnabled) "OLED-Dunkelmodus: EIN (tippen für Hell)" else {
-            "Darstellung: Hell (tippen für Dunkel)"
-        }
+        themeButton.text = if (darkModeEnabled) "OLED-Modus · Ein" else "Helles Design"
+        exportLogsButton.text = "Logs exportieren"
 
         window.statusBarColor = palette.systemBar
         window.navigationBarColor = palette.systemBar
         if (android.os.Build.VERSION.SDK_INT >= 29) {
-            // Keep Android from applying a light contrast scrim over the OLED-black bars.
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
         }
@@ -306,9 +416,6 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-    private fun matchWidth(): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 
     private fun onModelSelected(uri: Uri) {
         val metadata = queryModelMetadata(uri)
@@ -539,6 +646,7 @@ class MainActivity : ComponentActivity() {
         generateButton.isEnabled = !busy && selectedModel != null
         benchmarkButton.isEnabled = !busy && selectedModel != null
         cancelButton.isEnabled = busy && cancelable
+        cancelButton.visibility = if (busy && cancelable) View.VISIBLE else View.GONE
     }
 
     private fun formatBytes(bytes: Long): String {
