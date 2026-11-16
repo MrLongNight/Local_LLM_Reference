@@ -56,6 +56,12 @@ find_package(SPIRV-Headers CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 
 add_subdirectory("${LLAMA_CPP_SOURCE}" "${CMAKE_CURRENT_BINARY_DIR}/llama.cpp" EXCLUDE_FROM_ALL)
 
+if(ANDROID AND TARGET ggml-vulkan)
+    # ggml-vulkan is created by the pinned upstream project. Its imported Vulkan target
+    # does not expose the host Vulkan-Hpp include directory during Android cross-builds.
+    target_include_directories(ggml-vulkan SYSTEM PRIVATE "${_host_vulkan_include_dir}")
+endif()
+
 add_library(llm_reference SHARED jni_bridge.cpp)
 target_include_directories(llm_reference PRIVATE
     "${LLAMA_CPP_SOURCE}/include"
