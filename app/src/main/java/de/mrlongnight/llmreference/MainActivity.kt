@@ -94,14 +94,14 @@ class MainActivity : ComponentActivity() {
         }
 
         pageTitleView = TextView(this).apply {
-            text = "Lokale Sprachmodelle testen"
+            text = "Lokale Modelle testen"
             textSize = 27f
             setTypeface(typeface, Typeface.BOLD)
         }
         content.addView(pageTitleView, matchWidth())
 
         pageSubtitleView = TextView(this).apply {
-            text = "GGUF-Modelle laden und lokal ausführen."
+            text = "GGUF-Datei laden und testen."
             textSize = 14f
         }
         content.addView(pageSubtitleView, matchWidth(bottom = 20))
@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity() {
 
         modelCard = sectionCard("Modell")
         modelView = TextView(this).apply {
-            text = "Kein Modell geladen."
+            text = "Kein Modell."
             textSize = 14f
             setPadding(0, dp(4), 0, dp(12))
         }
@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
 
         promptCard = sectionCard("Prompt")
         promptCard.addView(TextView(this).apply {
-            text = "Direkte Textvervollständigung · kein Chat-Template"
+            text = "Direkte Vervollständigung."
             textSize = 13f
             setPadding(0, 0, 0, dp(10))
         }, matchWidth())
@@ -148,6 +148,7 @@ class MainActivity : ComponentActivity() {
             maxLines = 10
             gravity = Gravity.TOP or Gravity.START
             textSize = 16f
+            contentDescription = "Prompt eingeben"
             setPadding(dp(14), dp(12), dp(14), dp(12))
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE or
@@ -182,7 +183,7 @@ class MainActivity : ComponentActivity() {
 
         statusCard = sectionCard("Status")
         statusView = TextView(this).apply {
-            text = "Bereit. Modell auswählen."
+            text = "Bereit."
             textSize = 14f
             setPadding(0, dp(2), 0, 0)
             minHeight = dp(28)
@@ -192,7 +193,7 @@ class MainActivity : ComponentActivity() {
 
         outputCard = sectionCard("Ausgabe")
         outputView = TextView(this).apply {
-            text = "Noch keine Ausgabe"
+            text = "Noch leer."
             textSize = 15f
             setLineSpacing(dp(3).toFloat(), 1f)
             setTextIsSelectable(true)
