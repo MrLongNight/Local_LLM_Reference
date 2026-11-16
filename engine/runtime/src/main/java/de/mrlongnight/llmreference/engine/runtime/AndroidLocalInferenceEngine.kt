@@ -19,7 +19,6 @@ import de.mrlongnight.llmreference.engine.api.LocalInferenceEngine
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
@@ -39,7 +38,6 @@ class InferenceEngineException(message: String, cause: Throwable? = null) : Exce
 class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     private val appContext = context.applicationContext
     private val operationMutex = Mutex()
-    private val requestIds = AtomicInteger(1)
     private val pending = ConcurrentHashMap<Int, CancellableContinuation<Bundle>>()
     @Volatile private var remoteMessenger: Messenger? = null
     @Volatile private var activeConnection: ServiceConnection? = null
@@ -114,9 +112,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     private suspend fun request(command: Int, payload: Bundle = Bundle()): Bundle =
         operationMutex.withLock {
             val remote = ensureBound()
-            val requestId = requestIds.getAndUpdate { current ->
-                if (current >= Int.MAX_VALUE - 1) 1 else current + 1
-            }
+            val requestId = InferenceRequestIds.next()
             kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
                 pending[requestId] = continuation
                 // Serialize the initial send with cancellation. Otherwise a timeout can send
