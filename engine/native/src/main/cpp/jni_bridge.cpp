@@ -1,5 +1,4 @@
 #include <jni.h>
-#include <android/log.h>
 #include <llama.h>
 
 #include <algorithm>
@@ -14,7 +13,6 @@
 #include <unistd.h>
 
 namespace {
-constexpr char kTag[] = "LocalLLMReference";
 std::mutex g_mutex;
 bool g_backend_initialized = false;
 FILE * g_model_file = nullptr;
