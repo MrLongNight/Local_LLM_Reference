@@ -17,6 +17,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -57,8 +58,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var generateButton: Button
     private lateinit var benchmarkButton: Button
     private lateinit var cancelButton: Button
-    private lateinit var themeButton: Button
-    private lateinit var exportLogsButton: Button
+    private lateinit var utilityButton: Button
     private lateinit var rootScrollView: ScrollView
     private lateinit var rootContent: LinearLayout
     private lateinit var pageTitleView: TextView
@@ -95,14 +95,14 @@ class MainActivity : ComponentActivity() {
         }
 
         pageTitleView = TextView(this).apply {
-            text = "Local LLM Reference"
+            text = "Lokale Sprachmodelle testen"
             textSize = 27f
             setTypeface(typeface, Typeface.BOLD)
         }
         content.addView(pageTitleView, matchWidth())
 
         pageSubtitleView = TextView(this).apply {
-            text = "Lokale GGUF-Modelle laden, testen und vergleichen"
+            text = "GGUF-Modelle laden und lokal ausführen."
             textSize = 14f
         }
         content.addView(pageSubtitleView, matchWidth(bottom = 20))
@@ -111,26 +111,18 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        themeButton = Button(this).apply {
+        utilityButton = Button(this).apply {
+            text = "Weitere Aktionen"
             isAllCaps = false
             minHeight = dp(48)
-            setOnClickListener { toggleDarkMode() }
+            setOnClickListener { showUtilityMenu(this) }
         }
-        exportLogsButton = Button(this).apply {
-            text = "Logs exportieren"
-            isAllCaps = false
-            minHeight = dp(48)
-            setOnClickListener {
-                diagnosticsExporter.launch("local-llm-diagnostics-${System.currentTimeMillis()}.zip")
-            }
-        }
-        utilityRow.addView(themeButton, weightedWidth(1f, end = 8))
-        utilityRow.addView(exportLogsButton, weightedWidth(1f))
+        utilityRow.addView(utilityButton, matchWidth())
         content.addView(utilityRow, matchWidth(bottom = 20))
 
         modelCard = sectionCard("Modell")
         modelView = TextView(this).apply {
-            text = "Noch kein GGUF-Modell ausgewählt"
+            text = "Kein Modell geladen."
             textSize = 14f
             setPadding(0, dp(4), 0, dp(12))
         }
@@ -146,9 +138,9 @@ class MainActivity : ComponentActivity() {
         modelCard.addView(selectModelButton, matchWidth())
         content.addView(modelCard, matchWidth(bottom = 16))
 
-        promptCard = sectionCard("Prompt testen")
+        promptCard = sectionCard("Prompt")
         promptCard.addView(TextView(this).apply {
-            text = "Direkte Completion · ohne Chat-Template"
+            text = "Direkte Textvervollständigung · kein Chat-Template"
             textSize = 13f
             setPadding(0, 0, 0, dp(10))
         }, matchWidth())
@@ -204,7 +196,7 @@ class MainActivity : ComponentActivity() {
 
         statusCard = sectionCard("Status")
         statusView = TextView(this).apply {
-            text = "Bereit · Modell auswählen, um zu starten"
+            text = "Bereit. Modell auswählen."
             textSize = 14f
             setPadding(0, dp(2), 0, 0)
             minHeight = dp(28)
@@ -212,7 +204,7 @@ class MainActivity : ComponentActivity() {
         statusCard.addView(statusView, matchWidth())
         content.addView(statusCard, matchWidth(bottom = 16))
 
-        outputCard = sectionCard("Ergebnis")
+        outputCard = sectionCard("Ausgabe")
         outputView = TextView(this).apply {
             text = "Noch keine Ausgabe"
             textSize = 15f
@@ -303,6 +295,33 @@ class MainActivity : ComponentActivity() {
         val primaryTextOnAccent: Int,
     )
 
+    private fun showUtilityMenu(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menu.add("CPU-Benchmark").apply {
+                isEnabled = selectedModel != null && activeOperationJob == null
+                setOnMenuItemClickListener {
+                    runBenchmark()
+                    true
+                }
+            }
+            menu.add(if (darkModeEnabled) "Helles Design" else "OLED-Dunkelmodus").apply {
+                setOnMenuItemClickListener {
+                    toggleDarkMode()
+                    true
+                }
+            }
+            menu.add("Diagnoseprotokoll exportieren (ZIP)").apply {
+                setOnMenuItemClickListener {
+                    diagnosticsExporter.launch(
+                        "local-llm-diagnostics-${System.currentTimeMillis()}.zip"
+                    )
+                    true
+                }
+            }
+            show()
+        }
+    }
+
     private fun toggleDarkMode() {
         darkModeEnabled = !darkModeEnabled
         getSharedPreferences("appearance", MODE_PRIVATE).edit()
@@ -373,9 +392,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         tint(rootContent)
-        themeButton.text = if (darkModeEnabled) "OLED-Modus · Ein" else "Helles Design"
-        exportLogsButton.text = "Logs exportieren"
-
         window.statusBarColor = palette.systemBar
         window.navigationBarColor = palette.systemBar
         if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -640,11 +656,9 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun setBusy(busy: Boolean, cancelable: Boolean = false) {
-        themeButton.isEnabled = !busy
-        exportLogsButton.isEnabled = !busy
+        utilityButton.isEnabled = !busy
         selectModelButton.isEnabled = !busy
         generateButton.isEnabled = !busy && selectedModel != null
-        benchmarkButton.isEnabled = !busy && selectedModel != null
         cancelButton.isEnabled = busy && cancelable
         cancelButton.visibility = if (busy && cancelable) View.VISIBLE else View.GONE
     }
