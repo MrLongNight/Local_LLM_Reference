@@ -6,7 +6,7 @@ A modular Android reference engine for evaluating local GGUF inference with llam
 
 | Module | Responsibility | Android dependency |
 |---|---|---|
-| `:app` | Thin reference client and future manual device checks | Yes |
+| `:app` | Thin reference client and manual device checks | Yes |
 | `:engine:api` | Stable, platform-neutral contracts and data types | No |
 | `:engine:runtime` | SAF/file descriptor access, lifecycle, IPC and isolated process | Yes |
 | `:engine:native` | JNI/CMake and pinned llama.cpp implementation | Yes |
@@ -22,9 +22,11 @@ Dependency direction: app → runtime → native; runtime → api; app → bench
 - Original model file descriptor is passed to the isolated process; no model copy or rename is performed by the engine.
 - Inference runs in Android process `:llm_inference`, separate from the app process.
 - Generation cancellation is passed from the client through IPC to llama.cpp's CPU abort callback.
-- The initial sampler is deterministic greedy sampling. Decoder-only GGUF models are supported by this first reference path.
+- Reference app selects a GGUF file through Android's document picker, retains the provider URI and displays the original file name.
+- Reference app runs a direct completion prompt without a model-specific chat-template assumption.
+- Benchmark runner provides warmups, repeated measured samples, native vs wall-clock timings, averages and medians. Reports contain timing/token counts only, not prompt or generated text.
 
-The project is still under implementation. A completed Android build, APK artifact, and successful on-device inference have **not** yet been verified. The UI is currently a bootstrap screen; benchmark execution and device validation remain open.
+The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. A clean CI build and APK artifact have been verified; real-device model loading, generation, cancellation and benchmark results remain to be verified.
 
 ## Build
 
@@ -33,14 +35,14 @@ Requirements: JDK 17, Android SDK platform 36, NDK 30.0.16248370 and CMake 3.31.
 ```bash
 git clone --recurse-submodules https://github.com/MrLongNight/Local_LLM_Reference.git
 cd Local_LLM_Reference
-./gradlew --no-daemon clean assembleDebug
+./gradlew --no-daemon clean testDebugUnitTest assembleDebug
 ```
 
-The debug APK is produced at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions verifies the wrapper and submodule pins, builds the APK and uploads it as `local-llm-reference-debug-apk`.
+The debug APK is produced at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions verifies the wrapper and submodule pins, runs unit tests, builds the APK and uploads it as `local-llm-reference-debug-apk`.
 
 ## API boundaries
 
-The public API in `:engine:api` contains only Kotlin/JVM data types and suspend interfaces. Android `Uri`, `ParcelFileDescriptor`, Binder, JNI and llama.cpp objects stay inside runtime/native modules.
+The public API in `:engine:api` contains only Kotlin/JVM data types and suspend interfaces. Android `Uri`, `ParcelFileDescriptor`, Binder, JNI and llama.cpp objects stay inside runtime/native modules. Runtime re-exports the API contract; it does not re-export native implementation details.
 
 Example model descriptor:
 

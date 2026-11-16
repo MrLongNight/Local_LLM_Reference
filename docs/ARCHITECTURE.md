@@ -6,19 +6,19 @@
 :app ───────────────► :engine:runtime ─────► :engine:native
   │                          │
   │                          ▼
-  └──────────────► :benchmark ─────────────► :engine:api
-                             ▲
-:engine:runtime ─────────────┘
+  └──────────────► :benchmark       :engine:api
+                           ▲
+:engine:runtime ───────────┘
 ```
 
-The reference UI depends on runtime and benchmark. Runtime depends on native and the platform-neutral API. Benchmark depends on the API only. No engine module depends on the app.
+The reference app depends on runtime and benchmark. Runtime exposes the platform-neutral API and depends internally on native/JNI. Benchmark depends only on API. No engine module depends on app or DMS code.
 
 ## Boundaries
 
 - `:engine:api`: Kotlin/JVM contracts only. No Android, Compose, Room, vault, OCR, JNI or llama.cpp types.
 - `:engine:runtime`: SAF/file descriptor handling, model lifecycle, Binder IPC, deadlines and service process management.
 - `:engine:native`: the only module that knows the llama.cpp C API, JNI and CMake.
-- `:benchmark`: independent scenario execution and result persistence/export. It must not become part of the production inference path.
+- `:benchmark`: independent scenario execution and result calculations. The benchmark report stores only token counts and timings, never prompt or generated text.
 - `:app`: sample client only; no native state or engine implementation belongs in Activities or UI state holders.
 
 ## Inference process and cancellation
@@ -27,14 +27,18 @@ All native model objects belong to the dedicated Android process `:llm_inference
 
 The runtime passes a duplicated, seekable file descriptor to llama.cpp and retains its owning `FILE*` until the model is freed. The engine does not copy or rename model files.
 
+## Reference client
+
+The app uses Android's document picker and sends the selected original `content://` URI to runtime. The first reference UI intentionally tests raw text completion without assuming a model-specific chat template. It displays prompt/output token counts and native elapsed time/rate. It is a smoke-test UI, not the final end-user chat experience.
+
 ## Milestones
 
 1. Modular build skeleton and dependency boundaries.
 2. Exact llama.cpp pin and reproducible CPU-only native baseline.
 3. Runtime model access, isolated lifecycle and cancellation.
-4. Minimal reference UI for model selection, generation and diagnostics.
+4. Reference UI for model selection, completion and diagnostics.
 5. Repeatable benchmark scenarios and on-device CPU measurements.
-6. Optional backends only after the CPU path is reproducible.
+6. Optional backends only after the CPU baseline is reproducible.
 
 ## Baseline policy
 

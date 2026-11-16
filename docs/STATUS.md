@@ -12,19 +12,18 @@ Last updated: 2026-11-16
 - [x] Dedicated Android inference process and serialized worker execution.
 - [x] Client generation deadline and cancellation forwarding to llama.cpp's CPU abort callback.
 - [x] Gradle 9.9.1 wrapper with official wrapper-JAR and distribution SHA-256 pins.
-- [x] CI workflow checks toolchain/submodule pins, assembles the debug APK and uploads it.
+- [x] CI workflow checks toolchain/submodule pins, runs unit tests, assembles the debug APK and uploads it.
 - [x] Weekly Dependabot monitoring for Gradle, GitHub Actions and git submodules.
 - [x] Dependency decisions and compatibility rationale documented.
+- [x] Reference app provides SAF GGUF selection, original display name, direct completion and inference metrics.
+- [x] Benchmark runner with warmup, repeated samples, native/wall timing and median/average statistics.
 
-## Not yet verified / open
+## Verified
 
-- [ ] Clean CI build with all native targets completed successfully.
-- [ ] APK artifact uploaded and inspected from the current successful workflow run.
-- [ ] Device installation and GGUF load/generation smoke test.
+- [x] CI clean Android build and debug APK artifact on commit `f79e348b705c3f5680bc6352d6d0d1d570fbebf7` (run 43786637232).
+- [ ] Unit-test result for the newly added benchmark test and latest build commit.
+- [ ] APK installation and GGUF load/generation smoke test on a physical device.
 - [ ] Cancellation/timeout behavior verified on a physical device.
-- [ ] Benchmark module implementation and repeatable CPU measurements.
-- [ ] Model/chat UI and model picker.
-- [ ] Optional Vulkan build and controlled CPU/Vulkan comparison after CPU baseline.
-- [ ] API and runtime tests for lifecycle, descriptor handling, process death and cancellation.
+- [ ] Repeatable benchmark measurements on the target device.
 
-Source code being present is not evidence that it compiles or works on a device. No successful build, inference or performance result is claimed until the corresponding run/device result is inspected.
+Source code being present is not evidence that it works on a device. No real-device inference or performance result is claimed until the corresponding device result is inspected.

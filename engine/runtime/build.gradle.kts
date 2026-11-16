@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
 }
+
 android {
     namespace = "de.mrlongnight.llmreference.engine.runtime"
     compileSdk = 36
@@ -10,8 +11,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
 dependencies {
-    implementation(project(":engine:api"))
+    api(project(":engine:api"))
     implementation(project(":engine:native"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)

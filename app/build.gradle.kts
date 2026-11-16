@@ -11,7 +11,7 @@ android {
         minSdk = 24
         targetSdk = 36
         versionCode = 1
-        versionName = "0.2.0"
+        versionName = "0.3.0"
     }
 
     compileOptions {
@@ -23,4 +23,6 @@ android {
 dependencies {
     implementation(project(":engine:runtime"))
     implementation(project(":benchmark"))
+    implementation(libs.androidx.activity)
+    implementation(libs.kotlinx.coroutines.android)
 }

@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
 }
+
 android {
     namespace = "de.mrlongnight.llmreference.benchmark"
     compileSdk = 36
@@ -10,4 +11,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
-dependencies { implementation(project(":engine:api")) }
+
+dependencies {
+    api(project(":engine:api"))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.kotlinx.coroutines.core)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    useJUnitPlatform()
+}
