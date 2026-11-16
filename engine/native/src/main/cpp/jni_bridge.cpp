@@ -277,7 +277,6 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         return nullptr;
     }
 
-    g_abort_requested.store(false, std::memory_order_release);
     llama_memory_clear(llama_get_memory(g_context), false);
     const auto started = std::chrono::steady_clock::now();
     if (!decodeTokenBatch(tokens, 0)) {
@@ -331,6 +330,12 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
     return fromUtf8(env, output);
 }
 
+
+
+extern "C" JNIEXPORT void JNICALL
+Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeBeginGeneration(JNIEnv *, jobject) {
+    g_abort_requested.store(false, std::memory_order_release);
+}
 
 extern "C" JNIEXPORT void JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeAbortGeneration(JNIEnv *, jobject) {
