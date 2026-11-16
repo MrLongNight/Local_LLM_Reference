@@ -4,14 +4,14 @@ plugins {
 
 android {
     namespace = "de.mrlongnight.llmreference"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "de.mrlongnight.llmreference"
         minSdk = 24
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     compileOptions {
