@@ -6,7 +6,7 @@ Last updated: 2026-11-16
 
 - [x] Modular repository layout on `main`: app, api, runtime, native and benchmark modules.
 - [x] Platform-neutral API contracts for model metadata, generation configuration/results and inference lifecycle.
-- [x] Exact llama.cpp submodule pin at upstream commit `9fba51d2c9a1b5cb5f0c47986c031334e2d7663a`.
+- [x] Exact llama.cpp submodule pin at upstream commit `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5` (verified signed commit; current upstream master at check time).
 - [x] Native CPU-only JNI baseline using the pinned upstream llama API.
 - [x] Original model descriptor access by file descriptor; no engine-owned GGUF copy/rename.
 - [x] Dedicated Android inference process and serialized worker execution.
@@ -33,6 +33,8 @@ Last updated: 2026-11-16
 - [x] CI unit tests and APK artifact on commit `3887aa25a2c0712a490b55871ddbfc8aca2e25de` (run 43787764791).
 - [x] Build, unit tests and debug APK artifact for timing, cancellation and runtime request-ID hardening on commit `465d72c7099d8fd0d7f492e2b3832ff7865a966f` (run 43793903832).
 - [x] Native late-cancellation and JNI empty-output hardening built and packaged on commit `f4f04d200fd97ea60de096cd0f813688e7500506` (run 43794346530).
+- [x] Structured service lifecycle and cancellation logging on commit `0bde8d2a4327862cb529879ca892f4b2d1591e07` (run 43796271176).
+- [ ] CI verification after updating llama.cpp to `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`.
 - [ ] APK installation and GGUF load/generation smoke test on a physical device.
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
