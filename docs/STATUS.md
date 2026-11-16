@@ -7,7 +7,7 @@ Last updated: 2026-11-16
 - [x] Modular repository layout on `main`: app, api, runtime, native and benchmark modules.
 - [x] Platform-neutral API contracts for model metadata, generation configuration/results and inference lifecycle.
 - [x] Exact llama.cpp submodule pin at upstream commit `a946eb541a6d3051496bdcc451a0fa85772b8dfd` (verified signed upstream commit).
-- [x] llama.cpp refreshed to the latest signed upstream master commit checked on 2026-11-16; Android CI pin gate/build verification is pending.
+- [x] llama.cpp refreshed to the latest signed upstream master commit checked on 2026-11-16; exact submodule pin gate, unit tests, Android lint, native builds for both ABIs and APK packaging verified.
 - [x] Native CPU-only JNI baseline using the pinned upstream llama API.
 - [x] Original model descriptor access by file descriptor; no engine-owned GGUF copy/rename.
 - [x] Dedicated Android inference process and serialized worker execution.
@@ -33,7 +33,7 @@ Last updated: 2026-11-16
 - [x] Runtime concurrency test verifies 8,000 unique request IDs across eight concurrent clients.
 - [x] Model session ownership tests cover client isolation, replacement-load invalidation and blank identities.
 - [x] Persistent OLED-black default theme with manual light-mode toggle and low-glare system bars.
-- [x] Process-separated formatted plain-text diagnostics with bounded asynchronous writes, central privacy redaction and ZIP export.
+- [x] Process-separated formatted plain-text diagnostics with bounded asynchronous writes, central privacy redaction and ZIP export; export waits for an inference-process IPC flush barrier before snapshotting both process logs.
 - [x] Logs are capped at 128 KiB active + one 128 KiB rotation per process; routine IPC/UI duplicates removed and legacy oversized JSONL removed on initialization.
 - [x] Model-load and generation boundary events capture managed/native heap and system memory-pressure snapshots.
 - [x] Diagnostic privacy policy tests cover sensitive keys, URIs, absolute paths, value limits and safe performance counters.
@@ -41,10 +41,11 @@ Last updated: 2026-11-16
 ## Verified
 
 - [x] Previous llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact succeeded (run 43811994968).
-- [ ] New llama.cpp pin `a946eb541a6d3051496bdcc451a0fa85772b8dfd`: CI verification pending after updating the workflow's exact-pin gate.
+- [x] New llama.cpp pin `a946eb541a6d3051496bdcc451a0fa85772b8dfd`: exact-pin gate, unit tests, Android lint, native arm64-v8a/x86_64 builds and debug APK upload passed on commit `70658c54cd178ec302cc9cc8744cf6978987cde2` (run 43825723769).
 - [x] Immutable GitHub Actions SHA pins and thread-default correction built successfully (run 43813347672).
 - [x] Current full verification, including model-session ownership tests: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a2a2373e8d5059f727b559209bec20999e409290` (run 43815308166).
 - [x] APK artifact `local-llm-reference-debug-apk`: 31,880,247 bytes, SHA-256 `93d38d8fb26fe8ea9b6f01124c1708c33f08aa46abdc14174dd98d5a7bc969b5`.
+- [x] Latest verified APK artifact `local-llm-reference-debug-apk`: 31,892,358 bytes, SHA-256 `a0d860dfb2e088d171ab27cd18d028dac53c132467ef8ecb3d2c0798c56f6207` (run 43825723769; expires 2026-11-30).
 - [x] User-confirmed physical-device test completed without reported errors (2026-11-16; exact device/model/scenario details were not supplied).
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
