@@ -36,8 +36,8 @@ Last updated: 2026-11-16
 
 - [x] Updated llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact succeeded (run 43811994968).
 - [x] Immutable GitHub Actions SHA pins and thread-default correction built successfully (run 43813347672).
-- [x] Current full verification: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a5ef61f052f35015b359f56474fa5bd594885b74` (run 43813922421).
-- [x] APK artifact `local-llm-reference-debug-apk`: 31,880,213 bytes, SHA-256 `54d672c445fa15205b8798af51b2b6088a8ada3241376e6b932f3d026a32afb4`.
+- [x] Current full verification, including model-session ownership tests: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a2a2373e8d5059f727b559209bec20999e409290` (run 43815308166).
+- [x] APK artifact `local-llm-reference-debug-apk`: 31,880,247 bytes, SHA-256 `93d38d8fb26fe8ea9b6f01124c1708c33f08aa46abdc14174dd98d5a7bc969b5`.
 - [ ] APK installation and GGUF load/generation smoke test on a physical device.
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
