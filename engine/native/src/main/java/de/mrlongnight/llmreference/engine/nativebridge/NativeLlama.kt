@@ -1,19 +1,12 @@
 package de.mrlongnight.llmreference.engine.nativebridge
 
-/**
- * Narrow JNI surface. Native objects are owned and used only by the isolated runtime process.
- * This is an implementation bridge, not part of the stable engine API module.
- */
+/** JNI bridge; all native objects are owned by the isolated inference process. */
 object NativeLlama {
-    init {
-        System.loadLibrary("llm_reference")
-    }
-
+    init { System.loadLibrary("llm_reference") }
     external fun nativeInitialize(): Boolean
-    external fun nativeLoadModelFromFd(fd: Int, contextTokens: Int, threads: Int)
+    external fun nativeLoadModelFromFd(fd: Int, contextTokens: Int, threads: Int, gpuLayers: Int, useVulkan: Boolean)
     external fun nativeBeginGeneration()
-    external fun nativeGenerate(prompt: String, maxOutputTokens: Int): String?
-    /** Safe to invoke from the client dispatch thread while generation runs on the native worker. */
+    external fun nativeGenerate(prompt: String, maxOutputTokens: Int, temperature: Float, topP: Float, topK: Int, seed: Int): String?
     external fun nativeAbortGeneration()
     external fun nativeUnloadModel()
     external fun nativeShutdown()
@@ -22,6 +15,5 @@ object NativeLlama {
     external fun nativeLastGeneratedTokens(): Int
     external fun nativeLastPromptElapsedMillis(): Long
     external fun nativeLastGenerationElapsedMillis(): Long
-    /** Total native time from prompt prefill start through sampler completion. */
     external fun nativeLastElapsedMillis(): Long
 }
