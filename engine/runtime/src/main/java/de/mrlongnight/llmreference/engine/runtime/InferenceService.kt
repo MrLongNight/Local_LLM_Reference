@@ -134,13 +134,15 @@ class InferenceService : Service() {
     }
 
     private fun generate(requestId: Int, data: Bundle, response: Bundle) {
-        NativeLlama.nativeBeginGeneration()
         synchronized(requestStateLock) {
+            check(!stopping) { "Inference service is shutting down." }
             if (cancelledRequestIds.remove(requestId)) {
                 error("Generation cancelled before native execution.")
             }
+            NativeLlama.nativeBeginGeneration()
             // Publish the active ID atomically with the queued-cancellation check. The
-            // cancellation handler uses the same lock, so it cannot miss this transition.
+            // cancellation handler and service teardown use the same lock, so neither can
+            // miss the transition into native generation.
             activeRequestId.set(requestId)
         }
 
