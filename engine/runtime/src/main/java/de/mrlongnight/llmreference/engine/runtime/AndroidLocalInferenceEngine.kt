@@ -119,15 +119,23 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
             }
             kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
                 pending[requestId] = continuation
+                // Serialize the initial send with cancellation. Otherwise a timeout can send
+                // CANCEL before GENERATE reaches the service, so the service misses the cancel.
+                val sendLock = Any()
+                var requestSent = false
+                var cancelled = false
                 continuation.invokeOnCancellation {
                     pending.remove(requestId)
-                    if (command == InferenceIpc.GENERATE) {
-                        try {
-                            remote.send(Message.obtain(null, InferenceIpc.CANCEL_GENERATION).apply {
-                                arg1 = requestId
-                            })
-                        } catch (_: RemoteException) {
-                            // The isolated process may already have exited.
+                    synchronized(sendLock) {
+                        cancelled = true
+                        if (command == InferenceIpc.GENERATE && requestSent) {
+                            try {
+                                remote.send(Message.obtain(null, InferenceIpc.CANCEL_GENERATION).apply {
+                                    arg1 = requestId
+                                })
+                            } catch (_: RemoteException) {
+                                // The isolated process may already have exited.
+                            }
                         }
                     }
                 }
@@ -136,16 +144,23 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                     data = payload
                     replyTo = replyMessenger
                 }
-                try {
-                    remote.send(message)
-                } catch (error: RemoteException) {
-                    pending.remove(requestId)
-                    if (continuation.isActive) {
-                        continuation.resumeWithException(
-                            InferenceEngineException("Inference process is unavailable.", error)
-                        )
+                synchronized(sendLock) {
+                    if (!cancelled && continuation.isActive) {
+                        try {
+                            remote.send(message)
+                            requestSent = true
+                        } catch (error: RemoteException) {
+                            pending.remove(requestId)
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(
+                                    InferenceEngineException("Inference process is unavailable.", error)
+                                )
+                            }
+                            disconnect()
+                        }
+                    } else {
+                        message.recycle()
                     }
-                    disconnect()
                 }
             }
         }
