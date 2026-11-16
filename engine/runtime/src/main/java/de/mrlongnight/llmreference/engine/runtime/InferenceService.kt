@@ -28,6 +28,8 @@ class InferenceService : Service() {
         Thread(runnable, "LocalLLM-Inference")
     }
 
+    @Volatile private var stopping = false
+
     private lateinit var serviceMessenger: Messenger
 
     override fun onCreate() {
@@ -38,10 +40,14 @@ class InferenceService : Service() {
             } else {
                 // Messenger recycles its incoming Message after handleMessage returns.
                 val request = Message.obtain(incoming)
+                if (stopping) {
+                    request.recycle()
+                    return@Handler true
+                }
                 pendingRequestIds.add(request.arg1)
                 inferenceExecutor.execute {
                     try {
-                        if (cancelledRequestIds.remove(request.arg1)) {
+                        if (stopping || cancelledRequestIds.remove(request.arg1)) {
                             return@execute
                         }
                         handleRequest(request)
@@ -164,7 +170,14 @@ class InferenceService : Service() {
     }
 
     override fun onDestroy() {
-        // Queue native cleanup behind any in-flight operation; never free a context concurrently.
+        // Stop accepting work, abort an active generation, and let queued tasks drain without
+        // starting more native work before the serialized native cleanup runs.
+        stopping = true
+        synchronized(requestStateLock) {
+            if (activeRequestId.get() != 0) {
+                NativeLlama.nativeAbortGeneration()
+            }
+        }
         inferenceExecutor.execute { NativeLlama.nativeShutdown() }
         inferenceExecutor.shutdown()
         super.onDestroy()
