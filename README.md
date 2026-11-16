@@ -28,9 +28,7 @@ The project is still under implementation. A completed Android build, APK artifa
 
 ## Build
 
-Requirements: JDK 17, Android SDK platform 37, NDK 30.0.16248370 and CMake 3.31.6.
-
-Clone including the pinned submodule, then build:
+Requirements: JDK 17, Android SDK platform 36, NDK 30.0.16248370 and CMake 3.31.6.
 
 ```bash
 git clone --recurse-submodules https://github.com/MrLongNight/Local_LLM_Reference.git

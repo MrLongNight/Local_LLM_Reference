@@ -27,7 +27,7 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v4.0.4
       - name: Install Android build tools
-        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0" "ndk;30.0.16248370" "cmake;3.31.6"
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;30.0.16248370" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v6.4.1
       - name: Verify pinned dependencies
         run: |

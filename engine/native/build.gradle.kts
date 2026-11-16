@@ -3,7 +3,7 @@ plugins {
 }
 android {
     namespace = "de.mrlongnight.llmreference.engine.nativebridge"
-    compileSdk = 37
+    compileSdk = 36
     ndkVersion = "30.0.16248370"
 
     defaultConfig {

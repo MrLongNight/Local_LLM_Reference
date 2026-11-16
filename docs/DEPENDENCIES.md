@@ -9,12 +9,14 @@ Checked: 2026-11-16. Versions are fixed, not dynamic ranges. Dependabot checks G
 | Android Gradle Plugin | 9.5.0 | Current stable AGP checked on 2026-11-16 |
 | Gradle Wrapper | 9.9.1 | Current stable Gradle; exceeds AGP 9.5 minimum 9.6.0 |
 | JDK | 17 | Android/AGP toolchain baseline |
-| Android compile/target SDK | 37 | Current platform API supported by selected AGP |
-| Android Build Tools | 36.0.0 | AGP 9.5 default build-tools line |
+| Android compile/target SDK | 36 | Latest stable SDK Platform package exposed by the stable SDK repository in CI |
+| Android Build Tools | 36.0.0 | Matching stable build-tools line |
 | Android NDK | 30.0.16248370 (r30 LTS) | Current NDK LTS checked on 2026-11-16 |
 | CMake | 3.31.6 | Matches the pinned llama.cpp revision's official Android example |
 | kotlinx.coroutines | 1.11.0 | Current stable dependency checked on 2026-11-16 |
 | llama.cpp | `9fba51d2c9a1b5cb5f0c47986c031334e2d7663a` | Exact upstream commit; submodule, not moving branch |
+
+Android API 37 exists as the Android 17 platform target, but the platform package was not present on the stable SDK channel used by the CI runner. The official setup guide currently describes API 37 as the Cinnamon Bun Preview SDK package. The build therefore uses API 36, the latest stable SDK Platform package, rather than making the reproducible build depend on a preview-channel package. API 37 can be enabled when the SDK Platform moves to the stable channel and is available from the standard SDK repository.
 
 ## Kotlin compiler choice
 
@@ -33,6 +35,8 @@ CMake 4.5.0 was checked as the newest general CMake release on 2026-11-16. It is
 - Kotlin releases: https://kotlinlang.org/docs/releases.html
 - Kotlin/Gradle/AGP compatibility: https://kotlinlang.org/docs/gradle-configure-project.html
 - Gradle 9.9.1 checksums and releases: https://gradle.org/release-checksums/
+- Android SDK platform release notes: https://developer.android.com/tools/releases/platforms
+- Android 17 SDK setup: https://developer.android.com/about/versions/17/setup-sdk
 - Android NDK releases: https://developer.android.com/ndk/downloads
 - llama.cpp source and Android example: https://github.com/ggml-org/llama.cpp/tree/9fba51d2c9a1b5cb5f0c47986c031334e2d7663a/examples/llama.android
 - kotlinx.coroutines releases: https://github.com/Kotlin/kotlinx.coroutines/releases

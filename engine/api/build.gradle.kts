@@ -3,7 +3,7 @@ plugins {
 }
 android {
     namespace = "de.mrlongnight.llmreference.engine.api"
-    compileSdk = 37
+    compileSdk = 36
     defaultConfig { minSdk = 24 }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
