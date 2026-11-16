@@ -289,6 +289,16 @@ class MainActivity : ComponentActivity() {
         outputCard.addView(outputView, matchWidth())
         content.addView(outputCard, matchWidth())
 
+        val appVersionView = TextView(this).apply {
+            tag = "app-version"
+            text = appVersionLabel()
+            textSize = 11f
+            gravity = Gravity.END
+            setPadding(0, dp(14), 0, 0)
+            contentDescription = "Anwendungsversion: $text"
+        }
+        content.addView(appVersionView, matchWidth())
+
         rootContent = content
         rootScrollView = ScrollView(this).apply {
             isFillViewport = true
@@ -486,8 +496,10 @@ class MainActivity : ComponentActivity() {
                 }
                 is TextView -> {
                     view.setTextColor(
-                        when (view) {
-                            pageSubtitleView, statusView, modelView -> palette.secondaryText
+                        when {
+                            view === pageSubtitleView || view === statusView || view === modelView ->
+                                palette.secondaryText
+                            view.tag == "app-version" -> palette.secondaryText
                             else -> palette.text
                         }
                     )
@@ -1271,6 +1283,12 @@ class MainActivity : ComponentActivity() {
             "elapsed_ms" to result.elapsedMillis
         ))
         return "$label: Folgegenerierung erfolgreich (${result.generatedTokens} Tokens)"
+    }
+
+    @Suppress("DEPRECATION")
+    private fun appVersionLabel(): String {
+        val info = packageManager.getPackageInfo(packageName, 0)
+        return "Version ${info.versionName ?: "unbekannt"} · Build ${info.versionCode}"
     }
 
     private fun engine(): AndroidLocalInferenceEngine =
