@@ -32,6 +32,12 @@ AGP 9 enables built-in Kotlin support by default; this project uses that support
 
 Kotlin 2.4.21 is the latest stable Kotlin release checked on 2026-11-16. However, the published Kotlin Gradle Plugin compatibility table for 2.4.21 currently lists full support only through Gradle 9.7.0 and AGP 9.3.1. The selected newer AGP 9.5.1 / Gradle 9.9.1 combination is outside that declared range. We do not force an unverified external KGP override into the latest AGP built-in Kotlin integration. Revisit as soon as JetBrains publishes a compatibility row covering the selected AGP/Gradle combination.
 
+## Vulkan Android host/target split
+
+The Android build keeps Vulkan enabled while separating host shader-compilation dependencies from the Android target loader. CI installs host `glslc`, `libvulkan-dev` and `spirv-headers`; CMake stages only the Vulkan-Hpp, optional `vk_video`, and SPIR-V include trees into the native build directory. It never adds the host `/usr/include` wholesale to NDK compilation.
+
+The Android Vulkan loader is linked from the NDK sysroot for API 24. The pinned llama.cpp Vulkan backend directly references `vkGetPhysicalDeviceFeatures2` in three places even though the API-24 loader does not export that Vulkan 1.1 symbol. CMake therefore builds a generated copy of the pinned `ggml-vulkan.cpp` with those calls routed through the already initialized Vulkan-Hpp dynamic dispatcher (`vkGetInstanceProcAddr`). The source pin and expected three call sites are checked at configure time; an upstream change fails closed instead of silently skipping the compatibility adjustment. No files inside the llama.cpp submodule are modified, and the app minSdk remains 24.
+
 ## CMake selection
 
 CMake 4.5.0 was checked as the newest general CMake release on 2026-11-16. It is not silently substituted into the Android build yet: the exact pinned llama.cpp source's official Android sample uses CMake 3.31.6. That known configuration is retained for the first reproducible baseline. A move to CMake 4.x requires a separate CI build comparison, not just a version-number update.
