@@ -18,15 +18,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6.3.0
         with:
           distribution: temurin
           java-version: "17"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v4.0.4
+      - name: Install Android build tools
+        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0" "ndk;30.0.16248370" "cmake;3.31.6"
+      - uses: gradle/actions/setup-gradle@v6.4.1
         with:
-          gradle-version: "9.3.1"
+          gradle-version: "9.9.1"
+      - name: Report toolchain
+        run: |
+          java -version
+          gradle --version
+          $ANDROID_HOME/ndk/30.0.16248370/ndk-build --version
       - name: Assemble debug APK
         run: gradle --no-daemon assembleDebug
