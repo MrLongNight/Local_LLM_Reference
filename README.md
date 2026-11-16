@@ -77,4 +77,4 @@ The opaque URI is resolved inside the Android runtime. The current implementatio
 
 ## Maintenance
 
-See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for version selection, upstream compatibility checks and the update policy. Dependabot checks Gradle, GitHub Actions and the llama.cpp submodule weekly.
+See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for version selection, upstream compatibility checks and the update policy. See [docs/LOGGING.md](docs/LOGGING.md) for log structure, event meanings, privacy and size limits. Dependabot checks Gradle, GitHub Actions and the llama.cpp submodule weekly.

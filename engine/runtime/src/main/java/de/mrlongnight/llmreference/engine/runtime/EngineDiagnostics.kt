@@ -233,7 +233,11 @@ object EngineDiagnostics {
 
         val directory = File(context.applicationContext.filesDir, DIRECTORY_NAME)
         val files = directory.listFiles()
-            ?.filter { it.isFile && (it.name.endsWith(".log") || it.name.endsWith(".log.1")) }
+            ?.filter {
+                it.isFile &&
+                    (it.name.endsWith(".log") || it.name.endsWith(".log.1")) &&
+                    it.length() <= MAX_FILE_BYTES
+            }
             ?.sortedBy { it.name }
             .orEmpty()
         val output = context.contentResolver.openOutputStream(destination, "wt")

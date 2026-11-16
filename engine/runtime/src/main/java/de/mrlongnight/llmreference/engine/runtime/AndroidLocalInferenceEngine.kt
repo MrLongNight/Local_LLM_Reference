@@ -56,7 +56,6 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                 continuation.resume(reply.data ?: Bundle())
             } else {
                 val detail = reply.data?.getString(InferenceIpc.KEY_ERROR) ?: "Inference service failed."
-                EngineDiagnostics.error("ipc", "request_failed", mapOf("request_id" to reply.arg1))
                 continuation.resumeWithException(InferenceEngineException(detail))
             }
         } else {

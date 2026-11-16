@@ -292,10 +292,6 @@ class InferenceService : Service() {
                 "service_elapsed_ms" to (SystemClock.elapsedRealtime() - startedAt)
             ) + EngineDiagnostics.memorySnapshot(this))
         } catch (error: Exception) {
-            EngineDiagnostics.warn("generation", "native_generation_interrupted", mapOf(
-                "request_id" to requestId,
-                "error_class" to error.javaClass.simpleName
-            ))
             throw error
         } finally {
             synchronized(requestStateLock) {
