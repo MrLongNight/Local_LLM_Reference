@@ -23,6 +23,7 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import org.json.JSONObject
 
 /**
  * Process-aware diagnostics writer shared by the app and isolated inference service.
@@ -118,6 +119,72 @@ object EngineDiagnostics {
 
     fun error(component: String, event: String, attributes: Map<String, Any?> = emptyMap()) =
         write("ERROR", component, event, attributes)
+
+    /**
+     * Records the actual prompt and generated answer in a separate local interaction log.
+     * The record and file are bounded; text is explicitly marked when an oversized record is truncated.
+     */
+    fun interaction(
+        modelName: String,
+        backend: String,
+        prompt: String,
+        answer: String,
+        promptTokens: Int,
+        generatedTokens: Int,
+        elapsedMillis: Long,
+    ) {
+        val directory = logDirectory ?: return
+        val process = processName
+        var promptText = prompt
+        var answerText = answer
+        var promptTruncated = false
+        var answerTruncated = false
+        fun buildRecord(): ByteArray {
+            val json = JSONObject()
+                .put("timestamp_utc", timestamp())
+                .put("type", "generation")
+                .put("model", modelName.take(128))
+                .put("backend", backend.take(32))
+                .put("prompt", promptText)
+                .put("answer", answerText)
+                .put("prompt_truncated", promptTruncated)
+                .put("answer_truncated", answerTruncated)
+                .put("prompt_tokens", promptTokens)
+                .put("generated_tokens", generatedTokens)
+                .put("elapsed_ms", elapsedMillis)
+            return (json.toString() + "\n").toByteArray(Charsets.UTF_8)
+        }
+        var bytes = buildRecord()
+        while (bytes.size > 96 * 1024 && (promptText.isNotEmpty() || answerText.isNotEmpty())) {
+            if (answerText.length >= promptText.length && answerText.isNotEmpty()) {
+                answerText = answerText.take((answerText.length * 0.75).toInt())
+                answerTruncated = true
+            } else if (promptText.isNotEmpty()) {
+                promptText = promptText.take((promptText.length * 0.75).toInt())
+                promptTruncated = true
+            }
+            bytes = buildRecord()
+        }
+        try {
+            writer.execute { appendInteractionRecord(directory, process, bytes) }
+        } catch (_: RejectedExecutionException) {
+            recordDropped(1L)
+        }
+    }
+
+    private fun appendInteractionRecord(directory: File, process: String, bytes: ByteArray) {
+        val target = File(directory, "interactions.log")
+        try {
+            rotateIfNeeded(target, bytes.size.toLong())
+            FileOutputStream(target, true).use { it.write(bytes) }
+        } catch (failure: IOException) {
+            recordDropped(1L)
+            android.util.Log.e("EngineDiagnostics", "Could not append interaction log record", failure)
+        } catch (failure: RuntimeException) {
+            recordDropped(1L)
+            android.util.Log.e("EngineDiagnostics", "Interaction log writer failed", failure)
+        }
+    }
 
     private fun write(level: String, component: String, event: String, attributes: Map<String, Any?>) {
         val directory = logDirectory ?: return
@@ -266,8 +333,10 @@ object EngineDiagnostics {
                 Disk writes use a bounded background queue of 256 records.
                 Queue saturation and disk errors are counted as dropped records.
 
-                Privacy: prompt/output content, content URIs, absolute paths and credentials are
-                redacted. Unknown non-scalar attribute values are represented as [REDACTED].
+                Interaction text: actual prompts and generated answers are stored locally in
+                interactions.log. It is size-capped and rotated like the event logs. Prompts that
+                contain passwords or secrets will also be present in this file.
+                Ordinary diagnostic attributes continue to redact URIs, absolute paths and credentials.
             """.trimIndent()
             zip.putNextEntry(ZipEntry("README.txt"))
             zip.write(readme.toByteArray(Charsets.UTF_8))
