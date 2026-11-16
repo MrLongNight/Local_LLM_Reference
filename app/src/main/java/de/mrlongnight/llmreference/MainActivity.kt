@@ -592,7 +592,7 @@ class MainActivity : ComponentActivity() {
         activeOperationJob = activityScope.launch {
             try {
                 val prepared = withContext(Dispatchers.IO) {
-                    val fingerprint = model.sha256 ?: sha256ForUri(model.sourceUri)
+                    val fingerprint = sha256ForUri(model.sourceUri)
                     val resolved = model.copy(sha256 = fingerprint)
                     val started = SystemClock.elapsedRealtime()
                     engine().loadModel(resolved)
