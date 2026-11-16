@@ -288,7 +288,9 @@ class MainActivity : ComponentActivity() {
         statusView.text = "Diagnoseprotokoll wird exportiert …"
         activeOperationJob = activityScope.launch {
             try {
+                val diagnosticsEngine = engine()
                 val count = withContext(Dispatchers.IO) {
+                    diagnosticsEngine.flushRemoteDiagnostics()
                     EngineDiagnostics.exportZip(applicationContext, uri)
                 }
                 EngineDiagnostics.info("ui", "diagnostics_exported", mapOf("file_count" to count))

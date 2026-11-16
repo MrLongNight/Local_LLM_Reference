@@ -193,7 +193,7 @@ object EngineDiagnostics {
         }
     }
 
-    private fun flushPendingWrites() {
+    internal fun flushPendingWrites() {
         try {
             writer.submit {}.get(EXPORT_FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         } catch (failure: InterruptedException) {

@@ -111,6 +111,7 @@ class InferenceService : Service() {
         InferenceIpc.GENERATE -> "generate"
         InferenceIpc.UNLOAD_MODEL -> "unload_model"
         InferenceIpc.SYSTEM_INFO -> "system_info"
+        InferenceIpc.FLUSH_DIAGNOSTICS -> "flush_diagnostics"
         else -> "unknown"
     }
 
@@ -166,7 +167,9 @@ class InferenceService : Service() {
         ))
         val response = Bundle()
         val status = try {
-            check(NativeLlama.nativeInitialize()) { "Native backend initialization failed." }
+            if (message.what != InferenceIpc.FLUSH_DIAGNOSTICS) {
+                check(NativeLlama.nativeInitialize()) { "Native backend initialization failed." }
+            }
             val clientId = message.data.getString(InferenceIpc.KEY_CLIENT_ID).orEmpty()
             check(clientId.isNotBlank()) { "Missing engine client identity." }
             when (message.what) {
@@ -191,12 +194,17 @@ class InferenceService : Service() {
                     InferenceIpc.KEY_SYSTEM_INFO,
                     NativeLlama.nativeSystemInfo()
                 )
+                InferenceIpc.FLUSH_DIAGNOSTICS -> Unit
                 else -> error("Unsupported inference command: ${message.what}")
             }
             EngineDiagnostics.info("inference_service", "request_completed", mapOf(
                 "request_id" to message.arg1,
                 "command" to command
             ))
+            // Flush on the inference worker only after the completion event was queued.
+            if (message.what == InferenceIpc.FLUSH_DIAGNOSTICS) {
+                EngineDiagnostics.flushPendingWrites()
+            }
             InferenceIpc.STATUS_OK
         } catch (error: Exception) {
             EngineDiagnostics.error("inference_service", "request_failed", mapOf(

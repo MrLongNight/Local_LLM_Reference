@@ -38,7 +38,7 @@ The reference UI starts in persistent OLED dark mode: the main canvas and system
 
 The runtime owns process-aware structured diagnostics. The app and isolated inference service write separate UTF-8 JSON Lines files under the app-private `files/diagnostics` directory. Records include UTC timestamps, severity, process/thread, component, event and sanitized scalar attributes. Disk writes are serialized on a bounded background queue so UI actions do not wait for file I/O. Active files rotate at approximately 2 MiB, retaining one previous segment per process. Model-load and generation boundary events include managed heap, native heap and system memory-pressure snapshots.
 
-The app exports the process logs as a ZIP through Android's document picker. The archive contains a README describing the format and privacy limits. Prompt/output content, content URIs, absolute paths, credentials and non-scalar values are redacted by a central policy. Events should record useful dimensions and timings, never user text or generated output.
+The app exports the process logs as a ZIP through Android's document picker. Before taking the snapshot, it sends a flush-barrier IPC request to the isolated inference process; that process waits for its bounded writer queue to drain, then the app drains its own queue before reading both process files. The archive contains a README describing the format and privacy limits. Prompt/output content, content URIs, absolute paths, credentials and non-scalar values are redacted by a central policy. Events should record useful dimensions and timings, never user text or generated output.
 
 ## Timing semantics
 

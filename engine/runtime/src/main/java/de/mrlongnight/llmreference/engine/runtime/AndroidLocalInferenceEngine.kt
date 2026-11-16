@@ -148,6 +148,13 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     suspend fun systemInfo(): String =
         request(InferenceIpc.SYSTEM_INFO).getString(InferenceIpc.KEY_SYSTEM_INFO).orEmpty()
 
+    /** Flushes diagnostics queued by the isolated inference process before an export snapshot. */
+    suspend fun flushRemoteDiagnostics() {
+        EngineDiagnostics.info("diagnostics", "remote_flush_requested")
+        request(InferenceIpc.FLUSH_DIAGNOSTICS)
+        EngineDiagnostics.info("diagnostics", "remote_flush_completed")
+    }
+
     private suspend fun request(command: Int, payload: Bundle = Bundle()): Bundle =
         operationMutex.withLock {
             payload.putString(InferenceIpc.KEY_CLIENT_ID, clientId)
