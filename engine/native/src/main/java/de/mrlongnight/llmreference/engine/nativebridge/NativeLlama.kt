@@ -6,6 +6,7 @@ object NativeLlama {
     external fun nativeInitialize(): Boolean
     external fun nativeLoadModelFromFd(fd: Int, contextTokens: Int, threads: Int, gpuLayers: Int, useVulkan: Boolean)
     external fun nativeBeginGeneration()
+    external fun nativeFormatChat(roles: Array<String>, contents: Array<String>): String?
     external fun nativeGenerate(prompt: String, maxOutputTokens: Int, temperature: Float, topP: Float, topK: Int, seed: Int): String?
     external fun nativeAbortGeneration()
     external fun nativeUnloadModel()
