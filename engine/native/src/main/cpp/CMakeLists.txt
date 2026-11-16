@@ -35,12 +35,18 @@ if(ANDROID)
     # shader tools are host build dependencies and must be resolved outside the NDK sysroot.
     find_path(_host_vulkan_include_dir
         NAMES vulkan/vulkan.hpp
+        HINTS "$ENV{VULKAN_SDK}/Include" "$ENV{VULKAN_SDK}/include"
+        PATHS /usr/include /usr/local/include
         NO_CMAKE_FIND_ROOT_PATH
         REQUIRED
     )
+    if(NOT EXISTS "${_host_vulkan_include_dir}/vulkan/vulkan.hpp")
+        message(FATAL_ERROR "Host Vulkan C++ header not found: ${_host_vulkan_include_dir}/vulkan/vulkan.hpp")
+    endif()
     set(Vulkan_INCLUDE_DIR "${_host_vulkan_include_dir}" CACHE PATH "" FORCE)
-    # Directory-level SYSTEM include is inherited by ggml-vulkan's nested target.
-    include_directories(SYSTEM "${_host_vulkan_include_dir}")
+    # NDK clang replaces host default include paths with the Android sysroot. Pass the
+    # host Vulkan-Hpp path explicitly; CMake may otherwise suppress /usr/include as implicit.
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-I${_host_vulkan_include_dir}>")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(_vulkan_android_triple "aarch64-linux-android")
     elseif(ANDROID_ABI STREQUAL "x86_64")
@@ -57,12 +63,6 @@ find_package(Vulkan COMPONENTS glslc REQUIRED)
 find_package(SPIRV-Headers CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 
 add_subdirectory("${LLAMA_CPP_SOURCE}" "${CMAKE_CURRENT_BINARY_DIR}/llama.cpp" EXCLUDE_FROM_ALL)
-
-if(ANDROID AND TARGET ggml-vulkan)
-    # ggml-vulkan is created by the pinned upstream project. Its imported Vulkan target
-    # does not expose the host Vulkan-Hpp include directory during Android cross-builds.
-    target_include_directories(ggml-vulkan SYSTEM PRIVATE "${_host_vulkan_include_dir}")
-endif()
 
 add_library(llm_reference SHARED jni_bridge.cpp)
 target_include_directories(llm_reference PRIVATE
