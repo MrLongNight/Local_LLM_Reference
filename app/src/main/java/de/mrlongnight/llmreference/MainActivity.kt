@@ -796,9 +796,21 @@ class MainActivity : ComponentActivity() {
             val csvParts = mutableListOf<String>()
             try {
                 val runner = BenchmarkRunner()
+                val comparisonModelSha256 = withContext(Dispatchers.IO) {
+                    sha256ForUri(original.sourceUri)
+                }
+                val comparisonModel = original.copy(sha256 = comparisonModelSha256)
                 val backends = listOf(InferenceBackend.CPU, InferenceBackend.VULKAN)
                 for (backend in backends) {
-                    val descriptor = original.copy(
+                    // Re-fingerprint before each backend load. Never publish a CPU/Vulkan
+                    // comparison as matched if the selected document changed between runs.
+                    val currentModelSha256 = withContext(Dispatchers.IO) {
+                        sha256ForUri(comparisonModel.sourceUri)
+                    }
+                    check(currentModelSha256 == comparisonModelSha256) {
+                        "GGUF-Datei wurde während des CPU/Vulkan-Vergleichs verändert; Vergleich verworfen."
+                    }
+                    val descriptor = comparisonModel.copy(
                         backend = backend,
                         gpuLayers = if (backend == InferenceBackend.VULKAN) settings.gpuLayers else 0,
                     )
@@ -845,7 +857,9 @@ class MainActivity : ComponentActivity() {
             } finally {
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        engine().loadModel(original)
+                        val restored = original.copy(sha256 = sha256ForUri(original.sourceUri))
+                        engine().loadModel(restored)
+                        selectedModel = restored
                     }
                 }
                 if (activeOperationJob === coroutineContext[Job]) {
