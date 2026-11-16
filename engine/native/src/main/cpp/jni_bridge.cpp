@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <atomic>
 #include <cstdio>
 #include <cstdint>
 #include <mutex>
@@ -22,6 +23,11 @@ llama_context * g_context = nullptr;
 int32_t g_last_prompt_tokens = 0;
 int32_t g_last_generated_tokens = 0;
 int64_t g_last_elapsed_ms = 0;
+std::atomic<bool> g_abort_requested{false};
+
+bool shouldAbortGeneration(void *) {
+    return g_abort_requested.load(std::memory_order_acquire);
+}
 
 void throwJava(JNIEnv * env, const char * message) {
     jclass exception = env->FindClass("java/lang/IllegalStateException");
@@ -168,7 +174,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeInitializ
     return JNI_TRUE;
 }
 
-extern "C" JNIEXPORT jstring JNICALL
+extern "C" JNIEXPORT void JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModelFromFd(
         JNIEnv * env, jobject, jint fd, jint contextTokens, jint threads) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -179,24 +185,24 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
     }
     if (fd < 0 || contextTokens < 32) {
         throwJava(env, "Invalid model descriptor or context size.");
-        return nullptr;
+        return;
     }
 
     const int ownedFd = dup(fd);
     if (ownedFd < 0) {
         throwJava(env, "Could not duplicate the model file descriptor.");
-        return nullptr;
+        return;
     }
     if (lseek(ownedFd, 0, SEEK_SET) < 0) {
         close(ownedFd);
         throwJava(env, "The model provider does not expose a seekable file descriptor.");
-        return nullptr;
+        return;
     }
     g_model_file = fdopen(ownedFd, "rb");
     if (g_model_file == nullptr) {
         close(ownedFd);
         throwJava(env, "Could not open the model file descriptor.");
-        return nullptr;
+        return;
     }
 
     llama_model_params modelParams = llama_model_default_params();
@@ -205,12 +211,12 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
     if (g_model == nullptr) {
         releaseModelLocked();
         throwJava(env, "llama.cpp could not load this GGUF file.");
-        return nullptr;
+        return;
     }
     if (llama_model_has_encoder(g_model)) {
         releaseModelLocked();
         throwJava(env, "Encoder-decoder GGUF models are not supported by the current decoder-only reference path.");
-        return nullptr;
+        return;
     }
 
     llama_context_params contextParams = llama_context_default_params();
@@ -220,13 +226,15 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
     const int32_t chosenThreads = threads > 0 ? threads : 4;
     contextParams.n_threads = chosenThreads;
     contextParams.n_threads_batch = chosenThreads;
+    contextParams.abort_callback = shouldAbortGeneration;
+    contextParams.abort_callback_data = nullptr;
     g_context = llama_init_from_model(g_model, contextParams);
     if (g_context == nullptr) {
         releaseModelLocked();
         throwJava(env, "llama.cpp could not create an inference context.");
-        return nullptr;
+        return;
     }
-    return nullptr;
+    return;
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -269,10 +277,12 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         return nullptr;
     }
 
+    g_abort_requested.store(false, std::memory_order_release);
     llama_memory_clear(llama_get_memory(g_context), false);
     const auto started = std::chrono::steady_clock::now();
     if (!decodeTokenBatch(tokens, 0)) {
-        throwJava(env, "Prompt evaluation failed.");
+        const bool aborted = g_abort_requested.exchange(false, std::memory_order_acq_rel);
+        throwJava(env, aborted ? "Generation cancelled." : "Prompt evaluation failed.");
         return nullptr;
     }
 
@@ -303,7 +313,8 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         if (i + 1 < maxOutputTokens) {
             if (!decodeOneToken(token, nextPosition)) {
                 llama_sampler_free(sampler);
-                throwJava(env, "Generation decode failed.");
+                const bool aborted = g_abort_requested.exchange(false, std::memory_order_acq_rel);
+                throwJava(env, aborted ? "Generation cancelled." : "Generation decode failed.");
                 return nullptr;
             }
             ++nextPosition;
@@ -313,10 +324,18 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started).count();
+    g_abort_requested.store(false, std::memory_order_release);
     g_last_prompt_tokens = tokenCount;
     g_last_generated_tokens = generated;
     g_last_elapsed_ms = elapsed;
     return fromUtf8(env, output);
+}
+
+
+extern "C" JNIEXPORT void JNICALL
+Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeAbortGeneration(JNIEnv *, jobject) {
+    // This callback is intentionally lock-free: generation owns g_mutex on the worker thread.
+    g_abort_requested.store(true, std::memory_order_release);
 }
 
 extern "C" JNIEXPORT void JNICALL
