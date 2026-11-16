@@ -41,7 +41,7 @@ jobs:
           "$ANDROID_CLI" --no-metrics --version | tee "$RUNNER_TEMP/android-cli-version.txt"
           grep -Fxq "$ANDROID_CLI_VERSION" "$RUNNER_TEMP/android-cli-version.txt"
       - name: Install Vulkan shader build dependencies
-        run: sudo apt-get update && sudo apt-get install -y glslc spirv-headers
+        run: sudo apt-get update && sudo apt-get install -y glslc libvulkan-dev spirv-headers
       - name: Install Android SDK packages
         run: |
           "$ANDROID_CLI" --no-metrics sdk install \
