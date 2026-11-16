@@ -2,8 +2,9 @@ package de.mrlongnight.llmreference.engine.nativebridge
 
 /**
  * Narrow JNI surface. Native objects are owned and used only by the isolated runtime process.
+ * This is an implementation bridge, not part of the stable engine API module.
  */
-internal object NativeLlama {
+object NativeLlama {
     init {
         System.loadLibrary("llm_reference")
     }
