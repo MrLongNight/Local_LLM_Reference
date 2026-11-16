@@ -678,10 +678,15 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 }
-                outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
                 if (chatModeEnabled && result.text.isNotBlank()) {
                     chatHistory += ChatMessage("user", userPrompt)
                     chatHistory += ChatMessage("assistant", result.text)
+                    outputView.text = chatHistory.joinToString("\\n\\n") { message ->
+                        val speaker = if (message.role == "assistant") "Modell" else "Du"
+                        "$speaker: ${message.content}"
+                    }
+                } else {
+                    outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
                 }
                 val rate = if (result.generationElapsedMillis > 0L) {
                     result.generatedTokens * 1_000.0 / result.generationElapsedMillis
@@ -1054,7 +1059,7 @@ class MainActivity : ComponentActivity() {
                     val updated = InferenceAppSettings(
                         contextTokens = context.text.toString().toInt().also { require(it in 256..131072) },
                         threads = threads.text.toString().toInt().also { require(it in 0..256) },
-                        maxOutputTokens = output.text.toString().toInt().also { require(it in 1..8192) },
+                        maxOutputTokens = output.text.toString().toInt().also { require(it in 1..8192 && it <= context.text.toString().toInt() - 32) },
                         timeoutMillis = timeout.text.toString().toLong().also { require(it in 1_000L..600_000L) },
                         temperature = temperature.text.toString().toFloat().also { require(it.isFinite() && it in 0f..2f) },
                         topP = topP.text.toString().toFloat().also { require(it.isFinite() && it > 0f && it <= 1f) },
@@ -1108,7 +1113,7 @@ class MainActivity : ComponentActivity() {
             val results = mutableListOf<String>()
             try {
                 val inference = engine()
-                val prefillUnits = (model.contextTokens * 0.40).toInt().coerceAtLeast(128)
+                val prefillUnits = (model.contextTokens * 0.70).toInt().coerceIn(128, model.contextTokens - 64)
                 val longPrompt = buildString(prefillUnits * 2) {
                     repeat(prefillUnits) { append("a ") }
                 }
