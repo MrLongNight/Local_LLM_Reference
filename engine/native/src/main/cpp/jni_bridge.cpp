@@ -229,9 +229,12 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
     contextParams.n_ctx = static_cast<uint32_t>(contextTokens);
     contextParams.n_batch = static_cast<uint32_t>(std::min(contextTokens, 512));
     contextParams.n_ubatch = static_cast<uint32_t>(std::min(contextTokens, 128));
-    const int32_t chosenThreads = threads > 0 ? threads : 4;
-    contextParams.n_threads = chosenThreads;
-    contextParams.n_threads_batch = chosenThreads;
+    // Keep llama.cpp's own platform default when the API caller requests threads=0.
+    // Only override both pools when the caller explicitly supplies a positive value.
+    if (threads > 0) {
+        contextParams.n_threads = threads;
+        contextParams.n_threads_batch = threads;
+    }
     contextParams.abort_callback = shouldAbortGeneration;
     contextParams.abort_callback_data = nullptr;
     g_context = llama_init_from_model(g_model, contextParams);
