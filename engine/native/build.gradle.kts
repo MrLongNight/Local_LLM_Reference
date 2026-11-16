@@ -25,7 +25,7 @@ android {
                     "-DGGML_BACKEND_DL=OFF",
                     "-DGGML_CPU_ALL_VARIANTS=OFF",
                     "-DGGML_LLAMAFILE=OFF",
-                    "-DGGML_VULKAN=OFF"
+                    "-DGGML_VULKAN=ON"
                 )
             }
         }
