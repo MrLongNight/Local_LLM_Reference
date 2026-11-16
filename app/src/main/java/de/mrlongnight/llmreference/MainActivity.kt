@@ -15,13 +15,17 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import de.mrlongnight.llmreference.benchmark.BenchmarkPlan
+import de.mrlongnight.llmreference.benchmark.BenchmarkRunner
 import de.mrlongnight.llmreference.engine.api.GenerationConfig
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import de.mrlongnight.llmreference.engine.runtime.AndroidLocalInferenceEngine
 import java.util.Locale
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -29,12 +33,14 @@ import kotlinx.coroutines.withContext
 
 /**
  * Intentionally small reference client. Prompting is raw completion, not a chat-template wrapper.
- * It exists to exercise file access, isolated model loading, generation and cancellation on-device.
+ * It exercises original file access, isolated model loading, generation, cancellation and CPU
+ * benchmark execution on a physical device.
  */
 class MainActivity : ComponentActivity() {
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var inferenceEngine: AndroidLocalInferenceEngine? = null
     private var selectedModel: ModelDescriptor? = null
+    private var activeOperationJob: Job? = null
 
     private lateinit var statusView: TextView
     private lateinit var modelView: TextView
@@ -42,6 +48,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var outputView: TextView
     private lateinit var selectModelButton: Button
     private lateinit var generateButton: Button
+    private lateinit var benchmarkButton: Button
+    private lateinit var cancelButton: Button
 
     private val modelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onModelSelected(uri)
@@ -104,6 +112,24 @@ class MainActivity : ComponentActivity() {
         }
         content.addView(generateButton, matchWidth())
 
+        benchmarkButton = Button(this).apply {
+            text = "CPU-Benchmark (1 Warmup + 3 Läufe)"
+            isEnabled = false
+            setOnClickListener { runBenchmark() }
+        }
+        content.addView(benchmarkButton, matchWidth())
+
+        cancelButton = Button(this).apply {
+            text = "Lauf abbrechen"
+            isEnabled = false
+            setOnClickListener {
+                statusView.text = "Abbruch angefordert …"
+                isEnabled = false
+                activeOperationJob?.cancel()
+            }
+        }
+        content.addView(cancelButton, matchWidth())
+
         statusView = TextView(this).apply {
             text = "Bereit"
             textSize = 14f
@@ -111,7 +137,7 @@ class MainActivity : ComponentActivity() {
         content.addView(statusView, matchWidth())
 
         content.addView(TextView(this).apply {
-            text = "Ausgabe"
+            text = "Ausgabe / Benchmark-Ergebnis"
             textSize = 16f
         }, matchWidth())
 
@@ -173,11 +199,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadModel(model: ModelDescriptor) {
-        setBusy(true)
+        activeOperationJob?.cancel()
+        setBusy(true, cancelable = false)
         statusView.text = "Lade ${model.displayName} im isolierten Prozess …"
         outputView.text = ""
 
-        activityScope.launch {
+        activeOperationJob = activityScope.launch {
             try {
                 withContext(Dispatchers.IO) {
                     engine().loadModel(model)
@@ -187,15 +214,17 @@ class MainActivity : ComponentActivity() {
                     "${model.displayName} · ${formatBytes(it)} · Kontext ${model.contextTokens}"
                 } ?: "${model.displayName} · Kontext ${model.contextTokens}"
                 statusView.text = "Modell geladen · CPU-Referenz"
-                generateButton.isEnabled = true
             } catch (cancelled: CancellationException) {
+                statusView.text = "Modellladen abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
                 selectedModel = null
                 statusView.text = "Modellladen fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
-                generateButton.isEnabled = false
             } finally {
-                setBusy(false)
+                if (activeOperationJob === coroutineContext[Job]) {
+                    activeOperationJob = null
+                    setBusy(false)
+                }
             }
         }
     }
@@ -211,11 +240,11 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        setBusy(true)
+        setBusy(true, cancelable = true)
         statusView.text = "Generierung läuft · ${model.displayName}"
         outputView.text = ""
 
-        activityScope.launch {
+        activeOperationJob = activityScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
                     engine().generate(
@@ -238,11 +267,82 @@ class MainActivity : ComponentActivity() {
                     rate,
                 )
             } catch (cancelled: CancellationException) {
+                statusView.text = "Generierung abgebrochen · native Abbruchanforderung gesendet"
                 throw cancelled
             } catch (error: Exception) {
                 statusView.text = "Generierung fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
-                setBusy(false)
+                if (activeOperationJob === coroutineContext[Job]) {
+                    activeOperationJob = null
+                    setBusy(false)
+                }
+            }
+        }
+    }
+
+    private fun runBenchmark() {
+        val model = selectedModel ?: run {
+            statusView.text = "Zuerst ein GGUF-Modell laden."
+            return
+        }
+        val prompt = promptInput.text.toString()
+        if (prompt.isBlank()) {
+            statusView.text = "Prompt darf nicht leer sein."
+            return
+        }
+
+        setBusy(true, cancelable = true)
+        statusView.text = "CPU-Benchmark läuft · 1 Warmup + 3 Messungen"
+        outputView.text = ""
+
+        activeOperationJob = activityScope.launch {
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    BenchmarkRunner().run(
+                        engine = engine(),
+                        modelDisplayName = model.displayName,
+                        backendLabel = "CPU",
+                        plan = BenchmarkPlan(
+                            prompt = prompt,
+                            maxOutputTokens = 64,
+                            warmupRuns = 1,
+                            measuredRuns = 3,
+                            timeoutMillis = 180_000L,
+                        ),
+                    )
+                }
+                val details = report.samples.joinToString(separator = "\n") { sample ->
+                    String.format(
+                        Locale.ROOT,
+                        "Lauf %d: %d Tokens · Native %.2f tok/s · Gesamt %.2f tok/s · %d ms",
+                        sample.iteration,
+                        sample.generatedTokens,
+                        sample.nativeTokensPerSecond,
+                        sample.wallTokensPerSecond,
+                        sample.wallElapsedMillis,
+                    )
+                }
+                outputView.text = String.format(
+                    Locale.ROOT,
+                    "%s\n\nMittelwert Native: %.2f tok/s\nMedian Native: %.2f tok/s\nMittelwert Gesamt: %.2f tok/s\nMedian Gesamt: %.2f tok/s\n\n%s",
+                    report.modelDisplayName,
+                    report.averageNativeTokensPerSecond,
+                    report.medianNativeTokensPerSecond,
+                    report.averageWallTokensPerSecond,
+                    report.medianWallTokensPerSecond,
+                    details,
+                )
+                statusView.text = "CPU-Benchmark abgeschlossen · 3 Messungen"
+            } catch (cancelled: CancellationException) {
+                statusView.text = "CPU-Benchmark abgebrochen · native Abbruchanforderung gesendet"
+                throw cancelled
+            } catch (error: Exception) {
+                statusView.text = "CPU-Benchmark fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
+            } finally {
+                if (activeOperationJob === coroutineContext[Job]) {
+                    activeOperationJob = null
+                    setBusy(false)
+                }
             }
         }
     }
@@ -252,9 +352,11 @@ class MainActivity : ComponentActivity() {
             inferenceEngine = it
         }
 
-    private fun setBusy(busy: Boolean) {
+    private fun setBusy(busy: Boolean, cancelable: Boolean = false) {
         selectModelButton.isEnabled = !busy
         generateButton.isEnabled = !busy && selectedModel != null
+        benchmarkButton.isEnabled = !busy && selectedModel != null
+        cancelButton.isEnabled = busy && cancelable
     }
 
     private fun formatBytes(bytes: Long): String {
@@ -264,6 +366,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        activeOperationJob?.cancel()
         activityScope.cancel()
         val engineToClose = inferenceEngine
         if (engineToClose != null) {

@@ -6,7 +6,7 @@ Checked: 2026-11-16. Versions are fixed, not dynamic ranges. Dependabot checks G
 
 | Component | Selected version | Decision |
 |---|---:|---|
-| Android Gradle Plugin | 9.5.0 | Current stable AGP checked on 2026-11-16 |
+| Android Gradle Plugin | 9.5.1 | Current stable patch release checked on 2026-11-16 |
 | Gradle Wrapper | 9.9.1 | Current stable Gradle; exceeds AGP 9.5 minimum 9.6.0 |
 | JDK | 17 | Android/AGP toolchain baseline |
 | Android compile/target SDK | 36 | Latest stable SDK Platform package exposed by the stable SDK repository in CI |
@@ -22,9 +22,9 @@ Android API 37 exists as the Android 17 platform target, but the platform packag
 
 ## Kotlin compiler choice
 
-AGP 9 enables built-in Kotlin support by default. The repository therefore does not apply a second `org.jetbrains.kotlin.android` plugin, which would conflict with the built-in plugin.
+AGP 9 enables built-in Kotlin support by default; this project uses that supported integration and does not apply a second `org.jetbrains.kotlin.android` plugin. The Kotlin compiler plugin is therefore managed by AGP rather than independently pinned in the root plugin block.
 
-Kotlin 2.4.21 is the latest stable Kotlin release checked on 2026-11-16. The external Kotlin Gradle Plugin compatibility table does not list the selected AGP 9.5 / Gradle 9.9.1 combination as fully supported. We therefore do not force an independently versioned KGP over AGP's built-in Kotlin integration. Revisit this when the official compatibility matrix explicitly covers a newer compiler with this AGP/Gradle pair.
+Kotlin 2.4.21 is the latest stable Kotlin release checked on 2026-11-16. However, the published Kotlin Gradle Plugin compatibility table for 2.4.21 currently lists full support only through Gradle 9.7.0 and AGP 9.3.1. The selected newer AGP 9.5.1 / Gradle 9.9.1 combination is outside that declared range. We do not force an unverified external KGP override into the latest AGP built-in Kotlin integration. Revisit as soon as JetBrains publishes a compatibility row covering the selected AGP/Gradle combination.
 
 ## CMake selection
 
@@ -33,6 +33,7 @@ CMake 4.5.0 was checked as the newest general CMake release on 2026-11-16. It is
 ## Upstream references
 
 - AGP releases and Gradle compatibility: https://developer.android.com/build/releases/about-agp
+- AGP 9.5.1 release: https://developer.android.com/build/releases/agp-9-5-0-release-notes
 - Built-in Kotlin migration: https://developer.android.com/build/migrate-to-built-in-kotlin
 - Kotlin releases: https://kotlinlang.org/docs/releases.html
 - Kotlin/Gradle/AGP compatibility: https://kotlinlang.org/docs/gradle-configure-project.html

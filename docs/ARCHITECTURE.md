@@ -29,15 +29,15 @@ The runtime passes a duplicated, seekable file descriptor to llama.cpp and retai
 
 ## Reference client
 
-The app uses Android's document picker and sends the selected original `content://` URI to runtime. The first reference UI intentionally tests raw text completion without assuming a model-specific chat template. It displays prompt/output token counts and native elapsed time/rate. It is a smoke-test UI, not the final end-user chat experience.
+The app uses Android's document picker and sends the selected original `content://` URI to runtime. The initial UI intentionally tests raw text completion without assuming a model-specific chat template. It exposes cancellation and a short CPU benchmark (one warmup plus three measured generations). Results show token counts and native vs wall-clock throughput only. It is a smoke-test UI, not the final end-user chat experience.
 
 ## Milestones
 
 1. Modular build skeleton and dependency boundaries.
 2. Exact llama.cpp pin and reproducible CPU-only native baseline.
 3. Runtime model access, isolated lifecycle and cancellation.
-4. Reference UI for model selection, completion and diagnostics.
-5. Repeatable benchmark scenarios and on-device CPU measurements.
+4. Reference UI for model selection, completion, cancellation and benchmarks.
+5. Repeatable on-device CPU measurements.
 6. Optional backends only after the CPU baseline is reproducible.
 
 ## Baseline policy

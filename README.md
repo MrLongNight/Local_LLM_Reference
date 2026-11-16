@@ -23,10 +23,11 @@ Dependency direction: app → runtime → native; runtime → api; app → bench
 - Inference runs in Android process `:llm_inference`, separate from the app process.
 - Generation cancellation is passed from the client through IPC to llama.cpp's CPU abort callback.
 - Reference app selects a GGUF file through Android's document picker, retains the provider URI and displays the original file name.
-- Reference app runs a direct completion prompt without a model-specific chat-template assumption.
+- Reference app runs direct completion without assuming a model-specific chat template.
+- The UI has a cancel button for generation and the benchmark.
 - Benchmark runner provides warmups, repeated measured samples, native vs wall-clock timings, averages and medians. Reports contain timing/token counts only, not prompt or generated text.
 
-The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. A clean CI build and APK artifact have been verified; real-device model loading, generation, cancellation and benchmark results remain to be verified.
+The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. Clean CI builds, benchmark unit tests and APK artifact upload have been verified. Real-device model loading, generation, cancellation and benchmark results remain to be verified.
 
 ## Build
 

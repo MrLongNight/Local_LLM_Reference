@@ -15,13 +15,16 @@ Last updated: 2026-11-16
 - [x] CI workflow checks toolchain/submodule pins, runs unit tests, assembles the debug APK and uploads it.
 - [x] Weekly Dependabot monitoring for Gradle, GitHub Actions and git submodules.
 - [x] Dependency decisions and compatibility rationale documented.
-- [x] Reference app provides SAF GGUF selection, original display name, direct completion and inference metrics.
-- [x] Benchmark runner with warmup, repeated samples, native/wall timing and median/average statistics.
+- [x] Reference app provides SAF GGUF selection, original display name and raw completion.
+- [x] Reference UI exposes cancel and 1-warmup/3-measurement CPU benchmark controls.
+- [x] Benchmark runner calculates per-run results, native/wall throughput, averages and medians.
+- [x] Benchmark unit test verifies warmup exclusion and statistics.
 
 ## Verified
 
-- [x] CI clean Android build and debug APK artifact on commit `f79e348b705c3f5680bc6352d6d0d1d570fbebf7` (run 43786637232).
-- [ ] Unit-test result for the newly added benchmark test and latest build commit.
+- [x] CI clean Android build and APK artifact on commit `f79e348b705c3f5680bc6352d6d0d1d570fbebf7` (run 43786637232).
+- [x] CI unit tests and APK artifact on commit `3887aa25a2c0712a490b55871ddbfc8aca2e25de` (run 43787764791).
+- [ ] Build and unit tests for AGP 9.5.1 and the final cancel/benchmark UI commit.
 - [ ] APK installation and GGUF load/generation smoke test on a physical device.
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
