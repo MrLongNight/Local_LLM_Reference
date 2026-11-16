@@ -44,7 +44,9 @@ if(ANDROID)
     find_program(Vulkan_GLSLC_EXECUTABLE NAMES glslc REQUIRED)
 endif()
 find_package(Vulkan COMPONENTS glslc REQUIRED)
-find_package(SPIRV-Headers CONFIG REQUIRED)
+# SPIRV-Headers is a host-side header package used while compiling Vulkan shaders.
+# Do not search the Android NDK sysroot for this host package during cross-compilation.
+find_package(SPIRV-Headers CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 
 add_subdirectory("${LLAMA_CPP_SOURCE}" "${CMAKE_CURRENT_BINARY_DIR}/llama.cpp" EXCLUDE_FROM_ALL)
 
