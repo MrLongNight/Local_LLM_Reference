@@ -321,7 +321,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeFormatCha
     }
 
     const char * chatTemplate = llama_model_chat_template(g_model, nullptr);
-    if (chatTemplate == nullptr || chatTemplate[0] == '\\0') {
+    if (chatTemplate == nullptr || chatTemplate[0] == '\0') {
         throwJava(env, "The selected GGUF does not define a default chat template.");
         return nullptr;
     }
@@ -331,7 +331,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeFormatCha
         throwJava(env, "llama.cpp could not apply the model chat template.");
         return nullptr;
     }
-    std::vector<char> prompt(static_cast<size_t>(required) + 1U, '\\0');
+    std::vector<char> prompt(static_cast<size_t>(required) + 1U, '\0');
     const int32_t written = llama_chat_apply_template(
         chatTemplate, messages.data(), messages.size(), true,
         prompt.data(), static_cast<int32_t>(prompt.size()));
