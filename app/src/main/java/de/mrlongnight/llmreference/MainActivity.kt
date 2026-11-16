@@ -705,11 +705,9 @@ class MainActivity : ComponentActivity() {
                 results += cancellationProbe(
                     inference = inference,
                     label = "Decode-Abbruch",
-                    prompt = "Write a detailed explanation of local language model inference. " +
-                        "Cover tokenization, prompt prefill, KV cache, autoregressive decoding, " +
-                        "sampling and memory use. Continue until the output limit is reached.",
+                    prompt = "Write a very long essay about local language models. Do not stop early.",
                     maxOutputTokens = 8192,
-                    delayMillis = 2_500L,
+                    delayMillis = 3_000L,
                 )
                 results += recoveryProbe(inference, "Recovery nach Decode-Abbruch")
 
@@ -817,7 +815,7 @@ class MainActivity : ComponentActivity() {
             "generated_tokens" to result.generatedTokens,
             "elapsed_ms" to result.elapsedMillis
         ))
-        "$label: Folgegenerierung erfolgreich (${result.generatedTokens} Tokens)"
+        return "$label: Folgegenerierung erfolgreich (${result.generatedTokens} Tokens)"
     }
 
     private fun engine(): AndroidLocalInferenceEngine =
