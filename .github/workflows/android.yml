@@ -29,12 +29,20 @@ jobs:
       - name: Install Android build tools
         run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0" "ndk;30.0.16248370" "cmake;3.31.6"
       - uses: gradle/actions/setup-gradle@v6.4.1
-        with:
-          gradle-version: "9.9.1"
+      - name: Verify pinned dependencies
+        run: |
+          echo "621008afc4f5d59357fcf06ffa644dd5aade5e091bdc363742710445f73cdaf8  gradle/wrapper/gradle-wrapper.jar" | sha256sum --check
+          test "$(git -C third_party/llama.cpp rev-parse HEAD)" = "9fba51d2c9a1b5cb5f0c47986c031334e2d7663a"
       - name: Report toolchain
         run: |
           java -version
-          gradle --version
-          $ANDROID_HOME/ndk/30.0.16248370/ndk-build --version
+          ./gradlew --version
+          "$ANDROID_HOME/ndk/30.0.16248370/ndk-build" --version
       - name: Assemble debug APK
-        run: gradle --no-daemon assembleDebug
+        run: ./gradlew --no-daemon clean assembleDebug
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: local-llm-reference-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
