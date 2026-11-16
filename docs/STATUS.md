@@ -34,7 +34,7 @@ Last updated: 2026-11-16
 - [x] Build, unit tests and debug APK artifact for timing, cancellation and runtime request-ID hardening on commit `465d72c7099d8fd0d7f492e2b3832ff7865a966f` (run 43793903832).
 - [x] Native late-cancellation and JNI empty-output hardening built and packaged on commit `f4f04d200fd97ea60de096cd0f813688e7500506` (run 43794346530).
 - [x] Structured service lifecycle and cancellation logging on commit `0bde8d2a4327862cb529879ca892f4b2d1591e07` (run 43796271176).
-- [ ] CI verification after updating llama.cpp to `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`.
+- [x] Updated llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact all succeeded (run 43811994968; artifact `local-llm-reference-debug-apk`, 31,880,357 bytes, SHA-256 `1619c7f1277ff0e6db3ea4499d35282217868ef2b5204481f24549fb38841201`).
 - [ ] APK installation and GGUF load/generation smoke test on a physical device.
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
