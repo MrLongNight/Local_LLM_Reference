@@ -704,7 +704,7 @@ class MainActivity : ComponentActivity() {
 
                 results += cancellationProbe(
                     inference = inference,
-                    label = "Decode-Abbruch",
+                    label = "Lange-Generierung-Abbruch",
                     prompt = "Write a very long essay about local language models. Do not stop early.",
                     maxOutputTokens = 8192,
                     delayMillis = 3_000L,
