@@ -55,7 +55,9 @@ Wall timing wraps the complete suspend request, so it also includes tokenization
 
 ## Reference client
 
-The app uses Android's document picker and sends the selected original `content://` URI to runtime. The initial UI intentionally tests raw text completion without assuming a model-specific chat template. It exposes cancellation and a short CPU benchmark (one warmup plus three measured generations). The UI displays prefill, generation and end-to-end measurements separately. It is a smoke-test UI, not the final end-user chat experience.
+The app uses Android's document picker and passes the original content URI to runtime without copying the GGUF. A persistent model library retains the original filename, URI, file size, SHA-256 and last selection. The app restores the last model on launch when Android's persisted SAF permission is still valid. Context, threads, output, timeout, sampling, backend and benchmark-suite settings are persisted.
+
+Raw completion is the canonical benchmark path; chat mode is separate and uses the selected GGUF's own default chat template. Quick and Full suites carry full model/prompt fingerprints and exact configuration metadata. CPU/Vulkan comparison reloads the same GGUF for each backend. CSV exports include model-load, prefill, decode and wall timing per run plus summary statistics. Successful prompts and responses are also stored in a separate bounded local interaction log.
 
 ## Verification
 
