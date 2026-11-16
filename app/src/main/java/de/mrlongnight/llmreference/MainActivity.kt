@@ -82,6 +82,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var generateButton: Button
     private lateinit var cancelButton: Button
     private lateinit var utilityButton: Button
+    private lateinit var selfTestButton: Button
+    private lateinit var quickBenchmarkButton: Button
+    private lateinit var fullBenchmarkButton: Button
+    private lateinit var backendComparisonButton: Button
+    private lateinit var appVersionView: TextView
+    private lateinit var testToolsCard: LinearLayout
     private lateinit var rootScrollView: ScrollView
     private lateinit var rootContent: LinearLayout
     private lateinit var pageTitleView: TextView
@@ -133,7 +139,18 @@ class MainActivity : ComponentActivity() {
             setTypeface(typeface, Typeface.BOLD)
             if (android.os.Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
         }
-        content.addView(pageTitleView, matchWidth())
+        content.addView(pageTitleView, matchWidth(bottom = 8))
+
+        appVersionView = TextView(this).apply {
+            tag = "app-version"
+            text = appVersionLabel()
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.START
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            contentDescription = "Anwendungsversion: $text"
+        }
+        content.addView(appVersionView, matchWidth(bottom = 12))
 
         pageSubtitleView = TextView(this).apply {
             text = "GGUF-Datei laden und testen."
@@ -178,6 +195,45 @@ class MainActivity : ComponentActivity() {
         }
         modelCard.addView(libraryButton, matchWidth(top = 8))
         content.addView(modelCard, matchWidth(bottom = 16))
+
+        testToolsCard = sectionCard("Tests & Vergleiche")
+        testToolsCard.addView(TextView(this).apply {
+            text = "Diagnose und reproduzierbare Messungen direkt starten."
+            textSize = 13f
+            setPadding(0, 0, 0, dp(10))
+        }, matchWidth())
+
+        fun toolButton(label: String, action: () -> Unit): Button =
+            Button(this).apply {
+                text = label
+                isAllCaps = false
+                textSize = 13f
+                minHeight = dp(54)
+                isEnabled = false
+                setOnClickListener { action() }
+            }
+
+        selfTestButton = toolButton("Abbruch-Selbsttest") { runReliabilitySelfTest() }
+        quickBenchmarkButton = toolButton("Quick-Benchmark") { runBenchmark(full = false) }
+        fullBenchmarkButton = toolButton("Full-Benchmark") { runBenchmark(full = true) }
+        backendComparisonButton = toolButton("CPU / Vulkan") { runBackendComparison() }
+
+        val firstToolRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        firstToolRow.addView(selfTestButton, weightedWidth(1f, end = 8))
+        firstToolRow.addView(quickBenchmarkButton, weightedWidth(1f))
+        testToolsCard.addView(firstToolRow, matchWidth(bottom = 8))
+
+        val secondToolRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        secondToolRow.addView(fullBenchmarkButton, weightedWidth(1f, end = 8))
+        secondToolRow.addView(backendComparisonButton, weightedWidth(1f))
+        testToolsCard.addView(secondToolRow, matchWidth())
+        content.addView(testToolsCard, matchWidth(bottom = 16))
 
         promptCard = sectionCard("Prompt")
         promptCard.addView(TextView(this).apply {
@@ -288,16 +344,6 @@ class MainActivity : ComponentActivity() {
         }
         outputCard.addView(outputView, matchWidth())
         content.addView(outputCard, matchWidth())
-
-        val appVersionView = TextView(this).apply {
-            tag = "app-version"
-            text = appVersionLabel()
-            textSize = 11f
-            gravity = Gravity.END
-            setPadding(0, dp(14), 0, 0)
-            contentDescription = "Anwendungsversion: $text"
-        }
-        content.addView(appVersionView, matchWidth())
 
         rootContent = content
         rootScrollView = ScrollView(this).apply {
@@ -499,7 +545,10 @@ class MainActivity : ComponentActivity() {
                         when {
                             view === pageSubtitleView || view === statusView || view === modelView ->
                                 palette.secondaryText
-                            view.tag == "app-version" -> palette.secondaryText
+                            view.tag == "app-version" -> {
+                                view.background = roundedSurface(palette.surface, palette.cardStroke)
+                                palette.accent
+                            }
                             else -> palette.text
                         }
                     )
@@ -1300,6 +1349,11 @@ class MainActivity : ComponentActivity() {
         utilityButton.isEnabled = !busy
         selectModelButton.isEnabled = !busy
         generateButton.isEnabled = !busy && selectedModel != null
+        val canRunModelTools = !busy && selectedModel != null
+        selfTestButton.isEnabled = canRunModelTools
+        quickBenchmarkButton.isEnabled = canRunModelTools
+        fullBenchmarkButton.isEnabled = canRunModelTools
+        backendComparisonButton.isEnabled = canRunModelTools
         cancelButton.isEnabled = busy && cancelable
         cancelButton.visibility = if (busy && cancelable) View.VISIBLE else View.GONE
     }

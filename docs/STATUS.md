@@ -38,6 +38,7 @@ This app is primarily a reproducibility/performance-comparison prototype. The ce
 - [x] Earlier code revisions produced successful CI/APK runs 43827449493 and 43839389835. Both predate the current combined feature set.
 - [x] Source commit `2de79e7df44a48acefccab0b4ba6f00ccbadd2fe` passed CI run `43863693397` (native Vulkan build, tests, lint and artifact upload), but that APK incorrectly retained `versionCode=1` / `versionName=0.3.0`; it was not a valid upgrade over installed build 143.
 - [x] Corrected upgrade build `versionCode=144` / `versionName=0.4.0`, source commit `cd85f0c181d123bf7cbbc75381d9d41987ede800`, passed Actions run `43870148679`: Unit tests, Android lint, Vulkan native build, debug APK packaging, exact APK manifest-version assertion and artifact upload. Artifact `local-llm-reference-v144-debug-apk` (58,169,956 bytes), SHA-256 `25316259e68abafa948c8ef9c882a658b3f52e9ec5360bc59030ee0a9862e565`.
+- [ ] Build 145 / `versionName=0.4.1`: move the build label into the initial viewport and expose the self-test, Quick/Full benchmark and CPU/Vulkan comparison as visible primary tools. APK manifest assertion and physical UI verification pending.
 - [ ] Physical-device cancellation/timeout self-test and app/inference log inspection.
 - [ ] Physical-device Vulkan initialization, generation and CPU/Vulkan comparison.
 - [ ] Physical device UI review: dark/light, empty/loaded, running/cancelled and enlarged font.

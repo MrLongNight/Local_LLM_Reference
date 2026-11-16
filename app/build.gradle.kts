@@ -10,8 +10,8 @@ android {
         applicationId = "de.mrlongnight.llmreference"
         minSdk = 24
         targetSdk = 36
-        versionCode = 144
-        versionName = "0.4.0"
+        versionCode = 145
+        versionName = "0.4.1"
     }
 
     compileOptions {
