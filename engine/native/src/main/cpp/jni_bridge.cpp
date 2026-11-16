@@ -110,6 +110,10 @@ jstring fromUtf8(JNIEnv * env, const std::string & value) {
             out.push_back(static_cast<jchar>(0xDC00U + (cp & 0x3FFU)));
         }
     }
+    if (out.empty()) {
+        static constexpr jchar emptyString[] = {0};
+        return env->NewString(emptyString, 0);
+    }
     return env->NewString(out.data(), static_cast<jsize>(out.size()));
 }
 
@@ -354,7 +358,8 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
     const auto totalElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         totalFinished - promptStarted).count();
 
-    g_abort_requested.store(false, std::memory_order_release);
+    // nativeBeginGeneration() resets the flag for the next request. Do not clear it here:
+    // a cancellation arriving after the final check must not be overwritten during return.
     g_last_prompt_tokens = tokenCount;
     g_last_generated_tokens = generated;
     g_last_prompt_elapsed_ms = promptElapsed;
