@@ -523,7 +523,7 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeSystemInfo(JNIEnv * env, jobject) {
     const char * info = llama_print_system_info();
     std::string result = info == nullptr ? "unknown" : std::string(info);
-    result += "\\nbackend_devices=";
+    result += "\nbackend_devices=";
     for (size_t index = 0; index < ggml_backend_dev_count(); ++index) {
         ggml_backend_dev_t device = ggml_backend_dev_get(index);
         const char * name = ggml_backend_dev_name(device);
