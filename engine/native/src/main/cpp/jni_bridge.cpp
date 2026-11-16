@@ -1,9 +1,11 @@
 #include <jni.h>
 #include <llama.h>
+#include <ggml-backend.h>
 
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
@@ -182,7 +184,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeInitializ
 
 extern "C" JNIEXPORT void JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModelFromFd(
-        JNIEnv * env, jobject, jint fd, jint contextTokens, jint threads) {
+        JNIEnv * env, jobject, jint fd, jint contextTokens, jint threads, jint gpuLayers, jboolean useVulkan) {
     std::lock_guard<std::mutex> lock(g_mutex);
     releaseModelLocked();
     if (!g_backend_initialized) {
@@ -212,7 +214,28 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
     }
 
     llama_model_params modelParams = llama_model_default_params();
-    modelParams.n_gpu_layers = 0;
+    modelParams.n_gpu_layers = useVulkan == JNI_TRUE ? gpuLayers : 0;
+    std::vector<ggml_backend_dev_t> selectedDevices;
+    if (useVulkan == JNI_TRUE) {
+        ggml_backend_dev_t selectedVulkanDevice = nullptr;
+        for (size_t index = 0; index < ggml_backend_dev_count(); ++index) {
+            ggml_backend_dev_t device = ggml_backend_dev_get(index);
+            ggml_backend_reg_t registration = ggml_backend_dev_backend_reg(device);
+            const char * registrationName = registration == nullptr ? nullptr : ggml_backend_reg_name(registration);
+            if (registrationName != nullptr && std::string(registrationName) == "Vulkan") {
+                selectedVulkanDevice = device;
+                break;
+            }
+        }
+        if (selectedVulkanDevice == nullptr || gpuLayers == 0) {
+            releaseModelLocked();
+            throwJava(env, "Vulkan requested but no Vulkan backend device is available in this build or on this device.");
+            return;
+        }
+        selectedDevices.push_back(selectedVulkanDevice);
+        selectedDevices.push_back(nullptr);
+        modelParams.devices = selectedDevices.data();
+    }
     g_model = llama_model_load_from_file_ptr(g_model_file, modelParams);
     if (g_model == nullptr) {
         releaseModelLocked();
@@ -235,7 +258,9 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
         contextParams.n_threads = threads;
         contextParams.n_threads_batch = threads;
     }
-    contextParams.abort_callback = shouldAbortGeneration;
+    // llama.cpp's abort callback is CPU-only. Vulkan requests observe cancellation between
+    // completed backend operations in the generation loop; an active GPU kernel cannot be pre-empted.
+    contextParams.abort_callback = useVulkan == JNI_TRUE ? nullptr : shouldAbortGeneration;
     contextParams.abort_callback_data = nullptr;
     g_context = llama_init_from_model(g_model, contextParams);
     if (g_context == nullptr) {
@@ -248,7 +273,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
-        JNIEnv * env, jobject, jstring jPrompt, jint maxOutputTokens) {
+        JNIEnv * env, jobject, jstring jPrompt, jint maxOutputTokens, jfloat temperature, jfloat topP, jint topK, jint seed) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_last_prompt_tokens = 0;
     g_last_generated_tokens = 0;
@@ -259,7 +284,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         throwJava(env, "No model is loaded.");
         return nullptr;
     }
-    if (maxOutputTokens < 1 || maxOutputTokens > 8192) {
+    if (maxOutputTokens < 1 || maxOutputTokens > 8192 || !std::isfinite(temperature) || temperature < 0.0f || temperature > 2.0f || !std::isfinite(topP) || topP <= 0.0f || topP > 1.0f || topK < 0 || topK > 1024 || seed < 0) {
         throwJava(env, "maxOutputTokens must be between 1 and 8192.");
         return nullptr;
     }
@@ -309,6 +334,10 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         throwJava(env, aborted ? "Generation cancelled." : "Prompt evaluation failed.");
         return nullptr;
     }
+    if (g_abort_requested.exchange(false, std::memory_order_acq_rel)) {
+        throwJava(env, "Generation cancelled after prompt evaluation.");
+        return nullptr;
+    }
     const auto promptFinished = std::chrono::steady_clock::now();
 
     llama_sampler_chain_params samplerParams = llama_sampler_chain_default_params();
@@ -318,7 +347,14 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         throwJava(env, "Could not create the sampler.");
         return nullptr;
     }
-    llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+    if (temperature <= 0.0f) {
+        llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+    } else {
+        if (topK > 0) llama_sampler_chain_add(sampler, llama_sampler_init_top_k(topK));
+        if (topP < 1.0f) llama_sampler_chain_add(sampler, llama_sampler_init_top_p(topP, 1));
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(temperature));
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(static_cast<uint32_t>(seed)));
+    }
 
     const auto generationStarted = std::chrono::steady_clock::now();
     std::string output;
@@ -415,7 +451,18 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeShutdown(
 extern "C" JNIEXPORT jstring JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeSystemInfo(JNIEnv * env, jobject) {
     const char * info = llama_print_system_info();
-    return fromUtf8(env, info == nullptr ? std::string("unknown") : std::string(info));
+    std::string result = info == nullptr ? "unknown" : std::string(info);
+    result += "\\nbackend_devices=";
+    for (size_t index = 0; index < ggml_backend_dev_count(); ++index) {
+        ggml_backend_dev_t device = ggml_backend_dev_get(index);
+        const char * name = ggml_backend_dev_name(device);
+        const char * description = ggml_backend_dev_description(device);
+        if (index != 0) result += ";";
+        result += (name == nullptr ? "unknown" : name);
+        result += ":";
+        result += (description == nullptr ? "unknown" : description);
+    }
+    return fromUtf8(env, result);
 }
 
 extern "C" JNIEXPORT jint JNICALL
