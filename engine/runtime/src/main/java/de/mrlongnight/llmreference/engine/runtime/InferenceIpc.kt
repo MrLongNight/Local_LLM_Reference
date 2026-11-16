@@ -5,6 +5,7 @@ internal object InferenceIpc {
     const val GENERATE = 2
     const val UNLOAD_MODEL = 3
     const val SYSTEM_INFO = 4
+    const val CANCEL_GENERATION = 5
     const val RESULT = 100
 
     const val STATUS_OK = 0
