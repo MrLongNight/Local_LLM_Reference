@@ -6,17 +6,20 @@ Last updated: 2026-11-16
 
 - [x] Modular repository layout on `main`: app, api, runtime, native and benchmark modules.
 - [x] Platform-neutral API contracts for model metadata, generation configuration/results and inference lifecycle.
-- [x] Exact llama.cpp submodule pin at upstream commit `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5` (verified signed commit; current upstream master at check time).
+- [x] Exact llama.cpp submodule pin at upstream commit `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5` (verified signed upstream commit).
 - [x] Native CPU-only JNI baseline using the pinned upstream llama API.
 - [x] Original model descriptor access by file descriptor; no engine-owned GGUF copy/rename.
 - [x] Dedicated Android inference process and serialized worker execution.
 - [x] Service teardown rejects queued requests, aborts active generation and serializes native cleanup.
 - [x] Client generation deadline and cancellation forwarding to llama.cpp's CPU abort callback.
-- [x] Process-wide request ID allocation prevents collisions between concurrent engine clients.
+- [x] Process-wide request ID allocation prevents collisions across concurrent engine clients.
 - [x] Native cancellation is checked before prompt conversion and immediately after non-interruptible tokenization.
 - [x] JNI empty-string conversion does not pass a potentially null buffer to `NewString`.
+- [x] `threads=0` now preserves llama.cpp's own default; positive values explicitly override both thread pools.
 - [x] Gradle 9.9.1 wrapper with official wrapper-JAR and distribution SHA-256 pins.
-- [x] CI workflow checks toolchain/submodule pins, runs unit tests, assembles the debug APK and uploads it.
+- [x] Current stable GitHub Actions pinned to verified immutable commit SHAs.
+- [x] Android CLI version pinned to `1.1.16919734` with CI version gate.
+- [x] CI validates wrapper and native submodule pins, runs unit tests and Android lint, builds native arm64-v8a/x86_64 and uploads debug APK.
 - [x] Pre-commit CI validates JSON, YAML and TOML plus merge-conflict markers and added-file size.
 - [x] Weekly Dependabot monitoring for Gradle, GitHub Actions and git submodules.
 - [x] Dependency decisions and compatibility rationale documented.
@@ -29,12 +32,10 @@ Last updated: 2026-11-16
 
 ## Verified
 
-- [x] CI clean Android build and APK artifact on commit `f79e348b705c3f5680bc6352d6d0d1d570fbebf7` (run 43786637232).
-- [x] CI unit tests and APK artifact on commit `3887aa25a2c0712a490b55871ddbfc8aca2e25de` (run 43787764791).
-- [x] Build, unit tests and debug APK artifact for timing, cancellation and runtime request-ID hardening on commit `465d72c7099d8fd0d7f492e2b3832ff7865a966f` (run 43793903832).
-- [x] Native late-cancellation and JNI empty-output hardening built and packaged on commit `f4f04d200fd97ea60de096cd0f813688e7500506` (run 43794346530).
-- [x] Structured service lifecycle and cancellation logging on commit `0bde8d2a4327862cb529879ca892f4b2d1591e07` (run 43796271176).
-- [x] Updated llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact all succeeded (run 43811994968; artifact `local-llm-reference-debug-apk`, 31,880,357 bytes, SHA-256 `1619c7f1277ff0e6db3ea4499d35282217868ef2b5204481f24549fb38841201`).
+- [x] Updated llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact succeeded (run 43811994968).
+- [x] Immutable GitHub Actions SHA pins and thread-default correction built successfully (run 43813347672).
+- [x] Current full verification: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a5ef61f052f35015b359f56474fa5bd594885b74` (run 43813922421).
+- [x] APK artifact `local-llm-reference-debug-apk`: 31,880,213 bytes, SHA-256 `54d672c445fa15205b8798af51b2b6088a8ada3241376e6b932f3d026a32afb4`.
 - [ ] APK installation and GGUF load/generation smoke test on a physical device.
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.

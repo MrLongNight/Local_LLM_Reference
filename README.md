@@ -4,15 +4,15 @@ A modular Android reference engine for evaluating local GGUF inference with llam
 
 ## Modules
 
-| Module | Responsibility | Android dependency |
+| Module | Responsibility | Android APIs in module source |
 |---|---|---|
 | `:app` | Thin reference client and manual device checks | Yes |
 | `:engine:api` | Stable, platform-neutral contracts and data types | No |
 | `:engine:runtime` | SAF/file descriptor access, lifecycle, IPC and isolated process | Yes |
 | `:engine:native` | JNI/CMake and pinned llama.cpp implementation | Yes |
-| `:benchmark` | Independent benchmark scenarios and structured results | Yes |
+| `:benchmark` | Independent benchmark scenarios and structured results | No |
 
-Dependency direction: app → runtime → native; runtime → api; app → benchmark → api. The engine has no dependency on app/UI code or DMS-specific services.
+The API and benchmark source code contains no Android framework types. Both are packaged as Android library modules for direct use by Android clients. Dependency direction: app → runtime → native; runtime → api; app → benchmark → api. The engine has no dependency on app/UI code or DMS-specific services.
 
 ## Current implementation
 
@@ -27,8 +27,9 @@ Dependency direction: app → runtime → native; runtime → api; app → bench
 - The UI has a cancel button for generation and the benchmark.
 - Native timing separates prompt prefill from token generation. End-to-end wall timing includes tokenizer, IPC and the full request.
 - Benchmark runner provides warmups, repeated measured samples, native prefill throughput, native generation throughput and end-to-end throughput. Reports contain timing/token counts only, not prompt or generated text.
+- When `threads=0`, llama.cpp's own platform default is retained; explicit thread counts override both context and batch thread pools.
 
-The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. Clean CI builds, benchmark unit tests and APK artifact uploads have been verified. Real-device model loading, generation, cancellation and benchmark results remain to be verified.
+The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. CI verifies unit tests, Android lint, native builds for `arm64-v8a` and `x86_64`, debug APK packaging and artifact upload. Real-device model loading, generation, cancellation and benchmark results remain to be verified.
 
 ## Build
 
@@ -37,14 +38,14 @@ Requirements: JDK 17, Android SDK platform 36, NDK 30.0.16248370 and CMake 3.31.
 ```bash
 git clone --recurse-submodules https://github.com/MrLongNight/Local_LLM_Reference.git
 cd Local_LLM_Reference
-./gradlew --no-daemon clean testDebugUnitTest assembleDebug
+./gradlew --no-daemon clean testDebugUnitTest lint assembleDebug
 ```
 
-The debug APK is produced at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions verifies the wrapper and submodule pins, runs unit tests, builds the APK and uploads it as `local-llm-reference-debug-apk`.
+The debug APK is produced at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions verifies the wrapper, Android CLI and submodule pins, runs unit tests and lint, builds the APK and uploads it as `local-llm-reference-debug-apk`.
 
 ## API boundaries
 
-The public API in `:engine:api` contains only Kotlin/JVM data types and suspend interfaces. Android `Uri`, `ParcelFileDescriptor`, Binder, JNI and llama.cpp objects stay inside runtime/native modules. Runtime re-exports the API contract; it does not re-export native implementation details.
+The public API in `:engine:api` contains only Kotlin/JVM data types and suspend interfaces. Android `Uri`, `ParcelFileDescriptor`, Binder, JNI and llama.cpp objects stay inside runtime/native modules. Runtime consumes the API contract and does not expose native implementation details.
 
 Example model descriptor:
 
