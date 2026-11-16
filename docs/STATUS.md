@@ -37,7 +37,7 @@ This app is primarily a reproducibility/performance-comparison prototype. The ce
 - [x] Historical CPU timing evidence from the supplied device export: 1 warmup + 3 measured runs, mean 6.3307 tok/s and median 6.3322 tok/s; 52 generated tokens in approximately 8.20-8.23 seconds per run on the reported nubia P720F11 / Android 16. The export did not identify the model bytes or complete runtime parameters, so this is not yet a fully matched comparison scenario.
 - [x] Earlier code revisions produced successful CI/APK runs 43827449493 and 43839389835. Both predate the current combined feature set.
 - [x] Source commit `2de79e7df44a48acefccab0b4ba6f00ccbadd2fe` passed CI run `43863693397` (native Vulkan build, tests, lint and artifact upload), but that APK incorrectly retained `versionCode=1` / `versionName=0.3.0`; it was not a valid upgrade over installed build 143.
-- [ ] Corrected upgrade build 144 / version 0.4.0 must pass the new APK manifest-version assertion and artifact upload before being offered for installation.
+- [x] Corrected upgrade build `versionCode=144` / `versionName=0.4.0`, source commit `cd85f0c181d123bf7cbbc75381d9d41987ede800`, passed Actions run `43870148679`: Unit tests, Android lint, Vulkan native build, debug APK packaging, exact APK manifest-version assertion and artifact upload. Artifact `local-llm-reference-v144-debug-apk` (58,169,956 bytes), SHA-256 `25316259e68abafa948c8ef9c882a658b3f52e9ec5360bc59030ee0a9862e565`.
 - [ ] Physical-device cancellation/timeout self-test and app/inference log inspection.
 - [ ] Physical-device Vulkan initialization, generation and CPU/Vulkan comparison.
 - [ ] Physical device UI review: dark/light, empty/loaded, running/cancelled and enlarged font.
