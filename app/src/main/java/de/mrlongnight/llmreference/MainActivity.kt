@@ -56,7 +56,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var outputView: TextView
     private lateinit var selectModelButton: Button
     private lateinit var generateButton: Button
-    private lateinit var benchmarkButton: Button
     private lateinit var cancelButton: Button
     private lateinit var utilityButton: Button
     private lateinit var rootScrollView: ScrollView
@@ -157,10 +156,6 @@ class MainActivity : ComponentActivity() {
         }
         promptCard.addView(promptInput, matchWidth(bottom = 12))
 
-        val actionRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
         generateButton = Button(this).apply {
             text = "Generieren"
             isAllCaps = false
@@ -168,16 +163,7 @@ class MainActivity : ComponentActivity() {
             isEnabled = false
             setOnClickListener { generate() }
         }
-        benchmarkButton = Button(this).apply {
-            text = "CPU-Benchmark"
-            isAllCaps = false
-            minHeight = dp(52)
-            isEnabled = false
-            setOnClickListener { runBenchmark() }
-        }
-        actionRow.addView(generateButton, weightedWidth(1f, end = 8))
-        actionRow.addView(benchmarkButton, weightedWidth(1f))
-        promptCard.addView(actionRow, matchWidth())
+        promptCard.addView(generateButton, matchWidth())
 
         cancelButton = Button(this).apply {
             text = "Lauf abbrechen"
