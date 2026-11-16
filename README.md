@@ -18,19 +18,19 @@ The API and benchmark source code contains no Android framework types. Both are 
 
 - Modular Gradle project and platform-neutral API.
 - Exact llama.cpp upstream submodule pin.
-- Native CPU-only decoder path using the upstream llama API.
+- Native CPU reference path and selectable Vulkan backend using the pinned upstream llama.cpp API.
 - Original model file descriptor is passed to the isolated process; no model copy or rename is performed by the engine.
 - Inference runs in Android process `:llm_inference`, separate from the app process.
 - The service has one native model slot and leases it to the engine client instance that loaded it; another client cannot silently generate with or unload that model.
 - Generation cancellation is passed from the client through IPC to llama.cpp's CPU abort callback.
-- Reference app selects a GGUF file through Android's document picker, retains the provider URI and displays the original file name.
-- Reference app runs direct completion without assuming a model-specific chat template.
+- Reference app maintains a persistent original-GGUF URI library, remembers the last model and computes a full-file SHA-256 fingerprint without copying/renaming the model.
+- Raw completion remains the benchmark path; separate chat mode uses the selected GGUF's default chat template, optional system prompt and multi-turn in-memory history.
 - The UI has a cancel button for generation and the benchmark.
 - Native timing separates prompt prefill from token generation. End-to-end wall timing includes tokenizer, IPC and the full request.
-- Benchmark runner provides warmups, repeated measured samples, native prefill throughput, native generation throughput and end-to-end throughput. Reports contain timing/token counts only, not prompt or generated text.
+- Quick/Full benchmark runner records warmups and measured samples with model and prompt SHA-256, exact context/thread/output/timeout/sampling/backend settings, device/API/ABI/native backend inventory and model load duration. CSV exports include per-run prefill/decode/wall timing and summary statistics.
 - When `threads=0`, llama.cpp's own platform default is retained; explicit thread counts override both context and batch thread pools.
 - The reference UI starts in persistent OLED-black dark mode, with a manual light-mode switch.
-- Structured process-separated diagnostics are stored as compact, fixed-column plain-text logs with bounded background writes, rotation, sensitive-data redaction and ZIP export from the UI.
+- Structured process-separated diagnostics use bounded, rotated event logs; successful prompts and generated answers are also written to a separate local interaction log included in ZIP exports.
 - Each process log is capped at 128 KiB plus one previous 128 KiB segment; duplicate routine IPC lifecycle records are omitted.
 - Load and generation diagnostics include managed/native heap and system memory-pressure snapshots, alongside request IDs and stage timings.
 
