@@ -15,6 +15,7 @@ import android.os.ParcelFileDescriptor
 import android.os.RemoteException
 import de.mrlongnight.llmreference.engine.api.GenerationConfig
 import de.mrlongnight.llmreference.engine.api.GenerationResult
+import de.mrlongnight.llmreference.engine.api.ChatMessage
 import de.mrlongnight.llmreference.engine.api.LocalInferenceEngine
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import java.io.File
@@ -90,7 +91,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     }
 
     override suspend fun generate(prompt: String, config: GenerationConfig): GenerationResult {
-        require(prompt.isNotBlank()) { "Prompt must not be empty." }
+        require(prompt.isNotBlank() || config.chatMessages.isNotEmpty()) { "Prompt or chat messages must not be empty." }
         require(config.maxOutputTokens in 1..8192) { "Output token limit must be between 1 and 8192." }
         require(config.timeoutMillis in 1_000L..600_000L) { "Generation timeout must be between 1 second and 10 minutes." }
         val payload = Bundle().apply {
@@ -100,6 +101,10 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
             putFloat(InferenceIpc.KEY_TOP_P, config.topP)
             putInt(InferenceIpc.KEY_TOP_K, config.topK)
             putInt(InferenceIpc.KEY_SEED, config.seed)
+            if (config.chatMessages.isNotEmpty()) {
+                putStringArrayList(InferenceIpc.KEY_CHAT_ROLES, ArrayList(config.chatMessages.map(ChatMessage::role)))
+                putStringArrayList(InferenceIpc.KEY_CHAT_CONTENTS, ArrayList(config.chatMessages.map(ChatMessage::content)))
+            }
         }
         val result = try {
             withTimeout(config.timeoutMillis) {
@@ -123,7 +128,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
         EngineDiagnostics.interaction(
             modelName = loadedModelName ?: "unknown",
             backend = loadedBackend,
-            prompt = prompt,
+            prompt = if (config.chatMessages.isEmpty()) prompt else config.chatMessages.joinToString("\\n") { "${it.role}: ${it.content}" },
             answer = completed.text,
             promptTokens = completed.promptTokens,
             generatedTokens = completed.generatedTokens,
