@@ -1,12 +1,15 @@
 package de.mrlongnight.llmreference
 
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -20,6 +23,7 @@ import de.mrlongnight.llmreference.benchmark.BenchmarkRunner
 import de.mrlongnight.llmreference.engine.api.GenerationConfig
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import de.mrlongnight.llmreference.engine.runtime.AndroidLocalInferenceEngine
+import de.mrlongnight.llmreference.engine.runtime.EngineDiagnostics
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
@@ -50,13 +54,28 @@ class MainActivity : ComponentActivity() {
     private lateinit var generateButton: Button
     private lateinit var benchmarkButton: Button
     private lateinit var cancelButton: Button
+    private lateinit var themeButton: Button
+    private lateinit var exportLogsButton: Button
+    private lateinit var rootScrollView: ScrollView
+    private lateinit var rootContent: LinearLayout
+    private var darkModeEnabled = true
 
     private val modelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) onModelSelected(uri)
     }
 
+    private val diagnosticsExporter = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) exportDiagnostics(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        darkModeEnabled = getSharedPreferences("appearance", MODE_PRIVATE)
+            .getBoolean("dark_mode", true)
+        EngineDiagnostics.initialize(applicationContext, "app")
+        EngineDiagnostics.info("ui", "activity_created", mapOf("dark_mode" to darkModeEnabled))
         buildReferenceUi()
     }
 
@@ -74,6 +93,19 @@ class MainActivity : ComponentActivity() {
             text = "GGUF completion test · CPU reference · isolated inference process"
             textSize = 13f
         }, matchWidth())
+
+        themeButton = Button(this).apply {
+            setOnClickListener { toggleDarkMode() }
+        }
+        content.addView(themeButton, matchWidth())
+
+        exportLogsButton = Button(this).apply {
+            text = "Diagnoseprotokoll exportieren (ZIP)"
+            setOnClickListener {
+                diagnosticsExporter.launch("local-llm-diagnostics-${System.currentTimeMillis()}.zip")
+            }
+        }
+        content.addView(exportLogsButton, matchWidth())
 
         selectModelButton = Button(this).apply {
             text = "GGUF-Modell auswählen"
@@ -123,6 +155,7 @@ class MainActivity : ComponentActivity() {
             text = "Lauf abbrechen"
             isEnabled = false
             setOnClickListener {
+                EngineDiagnostics.warn("ui", "cancel_requested")
                 statusView.text = "Abbruch angefordert …"
                 isEnabled = false
                 activeOperationJob?.cancel()
@@ -148,7 +181,124 @@ class MainActivity : ComponentActivity() {
         }
         content.addView(outputView, matchWidth())
 
-        setContentView(ScrollView(this).apply { addView(content) })
+        rootContent = content
+        rootScrollView = ScrollView(this).apply {
+            isFillViewport = true
+            addView(content)
+        }
+        setContentView(rootScrollView)
+        applyTheme()
+    }
+
+    private data class ThemePalette(
+        val background: Int,
+        val surface: Int,
+        val text: Int,
+        val secondaryText: Int,
+        val accent: Int,
+        val inputTint: Int,
+        val systemBar: Int,
+    )
+
+    private fun toggleDarkMode() {
+        darkModeEnabled = !darkModeEnabled
+        getSharedPreferences("appearance", MODE_PRIVATE).edit()
+            .putBoolean("dark_mode", darkModeEnabled)
+            .apply()
+        EngineDiagnostics.info("ui", "appearance_changed", mapOf("dark_mode" to darkModeEnabled))
+        applyTheme()
+    }
+
+    private fun applyTheme() {
+        val palette = if (darkModeEnabled) {
+            ThemePalette(
+                background = Color.rgb(8, 11, 16),
+                surface = Color.rgb(22, 29, 39),
+                text = Color.rgb(238, 243, 250),
+                secondaryText = Color.rgb(174, 187, 202),
+                accent = Color.rgb(130, 190, 255),
+                inputTint = Color.rgb(130, 190, 255),
+                systemBar = Color.rgb(5, 7, 11),
+            )
+        } else {
+            ThemePalette(
+                background = Color.rgb(246, 248, 251),
+                surface = Color.WHITE,
+                text = Color.rgb(20, 31, 43),
+                secondaryText = Color.rgb(75, 91, 108),
+                accent = Color.rgb(20, 86, 165),
+                inputTint = Color.rgb(20, 86, 165),
+                systemBar = Color.rgb(235, 240, 246),
+            )
+        }
+
+        rootScrollView.setBackgroundColor(palette.background)
+        rootContent.setBackgroundColor(palette.background)
+
+        fun tint(view: View) {
+            when (view) {
+                is Button -> {
+                    view.setTextColor(palette.accent)
+                    view.backgroundTintList = ColorStateList.valueOf(palette.surface)
+                }
+                is EditText -> {
+                    view.setTextColor(palette.text)
+                    view.setHintTextColor(palette.secondaryText)
+                    view.backgroundTintList = ColorStateList.valueOf(palette.inputTint)
+                }
+                is TextView -> {
+                    view.setTextColor(
+                        if (view === statusView || view === modelView) {
+                            palette.secondaryText
+                        } else {
+                            palette.text
+                        }
+                    )
+                }
+            }
+            if (view is android.view.ViewGroup) {
+                for (index in 0 until view.childCount) tint(view.getChildAt(index))
+            }
+        }
+        tint(rootContent)
+        themeButton.text = if (darkModeEnabled) "Darstellung: Dunkel (tippen für Hell)" else {
+            "Darstellung: Hell (tippen für Dunkel)"
+        }
+
+        window.statusBarColor = palette.systemBar
+        window.navigationBarColor = palette.systemBar
+        var systemUi = 0
+        if (!darkModeEnabled) {
+            systemUi = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                systemUi = systemUi or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+        }
+        window.decorView.systemUiVisibility = systemUi
+    }
+
+    private fun exportDiagnostics(uri: Uri) {
+        setBusy(true, cancelable = false)
+        statusView.text = "Diagnoseprotokoll wird exportiert …"
+        activeOperationJob = activityScope.launch {
+            try {
+                val count = withContext(Dispatchers.IO) {
+                    EngineDiagnostics.exportZip(applicationContext, uri)
+                }
+                EngineDiagnostics.info("ui", "diagnostics_exported", mapOf("file_count" to count))
+                statusView.text = "Diagnoseprotokoll exportiert · $count Logdateien"
+            } catch (error: Exception) {
+                EngineDiagnostics.error("ui", "diagnostics_export_failed", mapOf(
+                    "error_class" to error.javaClass.simpleName
+                ))
+                statusView.text = "Log-Export fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
+            } finally {
+                if (activeOperationJob === coroutineContext[Job]) {
+                    activeOperationJob = null
+                    setBusy(false)
+                }
+            }
+        }
     }
 
     private fun matchWidth(): LinearLayout.LayoutParams =
@@ -156,6 +306,10 @@ class MainActivity : ComponentActivity() {
 
     private fun onModelSelected(uri: Uri) {
         val metadata = queryModelMetadata(uri)
+        EngineDiagnostics.info("model_picker", "model_selected", mapOf(
+            "file_name_extension" to metadata.first.substringAfterLast('.', "").lowercase(Locale.ROOT),
+            "size_bytes" to metadata.second
+        ))
         if (!metadata.first.endsWith(".gguf", ignoreCase = true)) {
             statusView.text = "Bitte eine GGUF-Datei auswählen."
             return
@@ -202,6 +356,11 @@ class MainActivity : ComponentActivity() {
 
     private fun loadModel(model: ModelDescriptor) {
         activeOperationJob?.cancel()
+        EngineDiagnostics.info("model", "load_started", mapOf(
+            "size_bytes" to model.sizeBytes,
+            "context_tokens" to model.contextTokens,
+            "threads_requested" to model.threads
+        ))
         setBusy(true, cancelable = false)
         statusView.text = "Lade ${model.displayName} im isolierten Prozess …"
         outputView.text = ""
@@ -216,11 +375,17 @@ class MainActivity : ComponentActivity() {
                     "${model.displayName} · ${formatBytes(it)} · Kontext ${model.contextTokens}"
                 } ?: "${model.displayName} · Kontext ${model.contextTokens}"
                 statusView.text = "Modell geladen · CPU-Referenz"
+                EngineDiagnostics.info("model", "load_completed", mapOf(
+                    "context_tokens" to model.contextTokens,
+                    "size_bytes" to model.sizeBytes
+                ))
             } catch (cancelled: CancellationException) {
+                EngineDiagnostics.warn("model", "load_cancelled")
                 statusView.text = "Modellladen abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
                 selectedModel = null
+                EngineDiagnostics.error("model", "load_failed", mapOf("error_class" to error.javaClass.simpleName))
                 statusView.text = "Modellladen fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 if (activeOperationJob === coroutineContext[Job]) {
@@ -242,6 +407,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        EngineDiagnostics.info("generation", "started", mapOf("prompt_characters" to prompt.length, "max_output_tokens" to 64))
         setBusy(true, cancelable = true)
         statusView.text = "Generierung läuft · ${model.displayName}"
         outputView.text = ""
@@ -255,6 +421,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
+                EngineDiagnostics.info("generation", "completed", mapOf(
+                    "prompt_tokens" to result.promptTokens,
+                    "generated_tokens" to result.generatedTokens,
+                    "prompt_elapsed_ms" to result.promptElapsedMillis,
+                    "generation_elapsed_ms" to result.generationElapsedMillis,
+                    "native_elapsed_ms" to result.elapsedMillis
+                ))
                 val generationRate = if (result.generationElapsedMillis > 0L) {
                     result.generatedTokens * 1_000.0 / result.generationElapsedMillis
                 } else {
@@ -271,9 +444,11 @@ class MainActivity : ComponentActivity() {
                     generationRate,
                 )
             } catch (cancelled: CancellationException) {
+                EngineDiagnostics.warn("generation", "cancelled")
                 statusView.text = "Generierung abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
+                EngineDiagnostics.error("generation", "failed", mapOf("error_class" to error.javaClass.simpleName))
                 statusView.text = "Generierung fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 if (activeOperationJob === coroutineContext[Job]) {
@@ -295,6 +470,12 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        EngineDiagnostics.info("benchmark", "started", mapOf(
+            "prompt_characters" to prompt.length,
+            "warmup_runs" to 1,
+            "measured_runs" to 3,
+            "max_output_tokens" to 64
+        ))
         setBusy(true, cancelable = true)
         statusView.text = "CPU-Benchmark läuft · 1 Warmup + 3 Messungen"
         outputView.text = ""
@@ -315,6 +496,21 @@ class MainActivity : ComponentActivity() {
                         ),
                     )
                 }
+                report.samples.forEach { sample ->
+                    EngineDiagnostics.info("benchmark", "sample_completed", mapOf(
+                        "iteration" to sample.iteration,
+                        "prompt_tokens" to sample.promptTokens,
+                        "generated_tokens" to sample.generatedTokens,
+                        "prompt_elapsed_ms" to sample.promptElapsedMillis,
+                        "generation_elapsed_ms" to sample.generationElapsedMillis,
+                        "wall_elapsed_ms" to sample.wallElapsedMillis
+                    ))
+                }
+                EngineDiagnostics.info("benchmark", "completed", mapOf(
+                    "measured_runs" to report.measuredRuns,
+                    "average_generation_tokens_per_second" to report.averageGenerationTokensPerSecond,
+                    "median_generation_tokens_per_second" to report.medianGenerationTokensPerSecond
+                ))
                 val details = report.samples.joinToString(separator = "\n") { sample ->
                     String.format(
                         Locale.ROOT,
@@ -342,9 +538,11 @@ class MainActivity : ComponentActivity() {
                 )
                 statusView.text = "CPU-Benchmark abgeschlossen · 3 Messungen"
             } catch (cancelled: CancellationException) {
+                EngineDiagnostics.warn("benchmark", "cancelled")
                 statusView.text = "CPU-Benchmark abgebrochen."
                 throw cancelled
             } catch (error: Exception) {
+                EngineDiagnostics.error("benchmark", "failed", mapOf("error_class" to error.javaClass.simpleName))
                 statusView.text = "CPU-Benchmark fehlgeschlagen: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 if (activeOperationJob === coroutineContext[Job]) {
@@ -361,6 +559,8 @@ class MainActivity : ComponentActivity() {
         }
 
     private fun setBusy(busy: Boolean, cancelable: Boolean = false) {
+        themeButton.isEnabled = !busy
+        exportLogsButton.isEnabled = !busy
         selectModelButton.isEnabled = !busy
         generateButton.isEnabled = !busy && selectedModel != null
         benchmarkButton.isEnabled = !busy && selectedModel != null
