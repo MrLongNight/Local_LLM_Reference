@@ -6,12 +6,13 @@ Checked: 2026-11-16. Versions are fixed, not dynamic ranges. Dependabot checks G
 
 | Component | Selected version | Decision |
 |---|---:|---|
+| GitHub runner OS | Ubuntu 26.04 LTS | Explicit runner label; current hosted image was verified on 2026-11-16 |
+| JDK | Eclipse Temurin 17.0.21+9 | Exact patch/build pin observed and verified in CI |
 | Android Gradle Plugin | 9.5.1 | Current stable patch release checked on 2026-11-16 |
 | Gradle Wrapper | 9.9.1 | Current stable Gradle; exceeds AGP 9.5 minimum 9.6.0 |
-| JDK | 17 | Android/AGP toolchain baseline |
 | Android CLI | 1.1.16919734 | Exact version verified in CI; Google latest installer plus a fail-closed version check |
 | Android compile/target SDK | 36 | Latest stable SDK Platform package exposed by the stable SDK repository in CI |
-| Android Build Tools | 36.0.0 | Matching stable build-tools line |
+| Android Build Tools | 36.0.0 | Explicit package version |
 | Android NDK | 30.0.16248370 (r30 LTS) | Current NDK LTS checked on 2026-11-16 |
 | CMake | 3.31.6 | Matches the pinned llama.cpp revision's official Android example |
 | kotlinx.coroutines | 1.11.0 | Current stable dependency checked on 2026-11-16 |
@@ -20,6 +21,8 @@ Checked: 2026-11-16. Versions are fixed, not dynamic ranges. Dependabot checks G
 | llama.cpp | `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5` | Exact verified upstream master commit; submodule, not moving branch |
 
 Android API 37 exists as the Android 17 platform target, but the platform package was not present on the stable SDK channel used by the CI runner. The build therefore uses API 36, the latest stable SDK Platform package, rather than making the reproducible build depend on a preview-channel package. API 37 can be enabled when the SDK Platform moves to the stable channel and is available from the standard SDK repository.
+
+The CI build does not install Android `platform-tools`: no emulator or `adb` operation is part of the build/test/lint job. Omitting the unpinned rolling package avoids an unnecessary moving dependency. Device-side validation uses the developer's Android platform tools separately.
 
 ## Kotlin compiler choice
 
@@ -43,6 +46,8 @@ The workflow pins each action to an immutable full commit SHA rather than a muta
 | actions/upload-artifact | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` |
 
 Google's official Android CLI download page currently provides the `latest` installer URL rather than an immutable versioned URL. The workflow therefore checks that the installed CLI reports exactly `1.1.16919734`; an unexpected change fails CI until the release notes and new version have been reviewed and the version pin updated. Android SDK packages are installed by explicit package/version identifiers.
+
+The hosted runner image remains maintained by GitHub and may receive image updates within the explicit `ubuntu-26.04` label. The workflow records the runner image version in its job log; compiler, Android SDK, NDK, CMake and action dependencies are separately pinned.
 
 ## Upstream references
 

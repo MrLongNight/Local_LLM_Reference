@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "17.0.21+9"
       - name: Install current Android CLI
         run: |
           curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
@@ -43,7 +43,6 @@ jobs:
       - name: Install Android SDK packages
         run: |
           "$ANDROID_CLI" --no-metrics sdk install \
-            platform-tools \
             platforms/android-36 \
             build-tools/36.0.0 \
             ndk/30.0.16248370 \
