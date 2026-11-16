@@ -34,7 +34,7 @@ The API and benchmark source code contains no Android framework types. Both are 
 - Each process log is capped at 128 KiB plus one previous 128 KiB segment; duplicate routine IPC lifecycle records are omitted.
 - Load and generation diagnostics include managed/native heap and system memory-pressure snapshots, alongside request IDs and stage timings.
 
-The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU-only reference client, not a complete end-user inference app. On 2026-11-16, the user's nubia P720F11 device completed model loading and a 1-warmup/3-measurement CPU benchmark (mean 6.3307 tok/s, median 6.3322 tok/s); the exported logs did not identify the selected GGUF. On-device cancellation/timeout edge cases and rendered UI review remain unverified. See `docs/STATUS.md` for the explicit app feature gaps and the exact scope of verification.
+The reference client supports decoder-only GGUF models, with CPU as the baseline and an optional Vulkan backend for controlled comparisons. Greedy decoding is the default; temperature, top-p, top-k and a fixed seed are configurable. This is a reproducibility/diagnostics prototype, not a complete end-user inference app. On 2026-11-16, the user's nubia P720F11 device completed model loading and a 1-warmup/3-measurement CPU benchmark (mean 6.3307 tok/s, median 6.3322 tok/s); the exported logs did not identify the selected GGUF. On-device cancellation/timeout edge cases, Vulkan inference and rendered UI review remain unverified. See `docs/STATUS.md` for the exact scope of verification.
 
 ## Build
 
