@@ -43,7 +43,6 @@ class InferenceService : Service() {
                         if (cancelledRequestIds.remove(request.arg1)) {
                             return@execute
                         }
-                        activeRequestId.set(request.arg1)
                         handleRequest(request)
                     } finally {
                         activeRequestId.compareAndSet(request.arg1, 0)
@@ -76,7 +75,7 @@ class InferenceService : Service() {
             check(NativeLlama.nativeInitialize()) { "Native backend initialization failed." }
             when (message.what) {
                 InferenceIpc.LOAD_MODEL -> loadModel(message.data)
-                InferenceIpc.GENERATE -> generate(message.data, response)
+                InferenceIpc.GENERATE -> generate(message.arg1, message.data, response)
                 InferenceIpc.UNLOAD_MODEL -> NativeLlama.nativeUnloadModel()
                 InferenceIpc.SYSTEM_INFO -> response.putString(
                     InferenceIpc.KEY_SYSTEM_INFO,
@@ -124,16 +123,30 @@ class InferenceService : Service() {
         }
     }
 
-    private fun generate(data: Bundle, response: Bundle) {
-        val prompt = data.getString(InferenceIpc.KEY_PROMPT)
-            ?: error("Missing prompt.")
-        val maxOutputTokens = data.getInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, 256)
-        val text = NativeLlama.nativeGenerate(prompt, maxOutputTokens)
-            ?: error("Native generation returned no result.")
-        response.putString(InferenceIpc.KEY_TEXT, text)
-        response.putInt(InferenceIpc.KEY_PROMPT_TOKENS, NativeLlama.nativeLastPromptTokens())
-        response.putInt(InferenceIpc.KEY_GENERATED_TOKENS, NativeLlama.nativeLastGeneratedTokens())
-        response.putLong(InferenceIpc.KEY_ELAPSED_MILLIS, NativeLlama.nativeLastElapsedMillis())
+    private fun generate(requestId: Int, data: Bundle, response: Bundle) {
+        NativeLlama.nativeBeginGeneration()
+        if (cancelledRequestIds.remove(requestId)) {
+            error("Generation cancelled before native execution.")
+        }
+
+        activeRequestId.set(requestId)
+        try {
+            // Check again after publishing the active ID to close the queue/start race.
+            if (cancelledRequestIds.remove(requestId)) {
+                NativeLlama.nativeAbortGeneration()
+            }
+            val prompt = data.getString(InferenceIpc.KEY_PROMPT)
+                ?: error("Missing prompt.")
+            val maxOutputTokens = data.getInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, 256)
+            val text = NativeLlama.nativeGenerate(prompt, maxOutputTokens)
+                ?: error("Native generation returned no result.")
+            response.putString(InferenceIpc.KEY_TEXT, text)
+            response.putInt(InferenceIpc.KEY_PROMPT_TOKENS, NativeLlama.nativeLastPromptTokens())
+            response.putInt(InferenceIpc.KEY_GENERATED_TOKENS, NativeLlama.nativeLastGeneratedTokens())
+            response.putLong(InferenceIpc.KEY_ELAPSED_MILLIS, NativeLlama.nativeLastElapsedMillis())
+        } finally {
+            activeRequestId.compareAndSet(requestId, 0)
+        }
     }
 
     override fun onDestroy() {
