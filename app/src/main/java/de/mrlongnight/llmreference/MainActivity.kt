@@ -29,6 +29,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import de.mrlongnight.llmreference.benchmark.BenchmarkMetadata
 import de.mrlongnight.llmreference.benchmark.BenchmarkPlan
 import de.mrlongnight.llmreference.benchmark.BenchmarkRunner
+import de.mrlongnight.llmreference.engine.api.ChatMessage
 import de.mrlongnight.llmreference.engine.api.GenerationConfig
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import de.mrlongnight.llmreference.engine.api.InferenceBackend
@@ -70,6 +71,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var statusView: TextView
     private lateinit var modelView: TextView
     private lateinit var promptInput: EditText
+    private lateinit var systemPromptInput: EditText
+    private lateinit var chatModeButton: Button
+    private lateinit var clearChatButton: Button
+    private val chatHistory = mutableListOf<ChatMessage>()
+    private var chatModeEnabled = false
     private lateinit var outputView: TextView
     private lateinit var selectModelButton: Button
     private lateinit var generateButton: Button
@@ -174,10 +180,54 @@ class MainActivity : ComponentActivity() {
 
         promptCard = sectionCard("Prompt")
         promptCard.addView(TextView(this).apply {
-            text = "Direkte Vervollständigung."
+            text = "Prompt / Chat-Eingabe"
             textSize = 13f
             setPadding(0, 0, 0, dp(10))
         }, matchWidth())
+        chatModeButton = Button(this).apply {
+            text = "Chat-Template: aus"
+            isAllCaps = false
+            minHeight = dp(48)
+            setOnClickListener {
+                chatModeEnabled = !chatModeEnabled
+                if (!chatModeEnabled) chatHistory.clear()
+                text = if (chatModeEnabled) "Chat-Template: an" else "Chat-Template: aus"
+                systemPromptInput.visibility = if (chatModeEnabled) View.VISIBLE else View.GONE
+                clearChatButton.visibility = if (chatModeEnabled) View.VISIBLE else View.GONE
+                promptCard.findViewWithTag<TextView>("prompt-mode-label")?.text =
+                    if (chatModeEnabled) "Modellabhängige GGUF-Chatvorlage · Verlauf bleibt bis zum Leeren im Arbeitsspeicher."
+                    else "Direkte Vervollständigung · reproduzierbarer Raw-Prompt."
+            }
+        }
+        promptCard.addView(chatModeButton, matchWidth(bottom = 6))
+        val modeLabel = TextView(this).apply {
+            tag = "prompt-mode-label"
+            text = "Direkte Vervollständigung · reproduzierbarer Raw-Prompt."
+            textSize = 12f
+        }
+        promptCard.addView(modeLabel, matchWidth(bottom = 8))
+        systemPromptInput = EditText(this).apply {
+            hint = "Optionaler System-Prompt"
+            minLines = 2
+            maxLines = 4
+            gravity = Gravity.TOP or Gravity.START
+            textSize = 14f
+            visibility = View.GONE
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        promptCard.addView(systemPromptInput, matchWidth(bottom = 8))
+        clearChatButton = Button(this).apply {
+            text = "Chatverlauf leeren"
+            isAllCaps = false
+            minHeight = dp(44)
+            visibility = View.GONE
+            setOnClickListener {
+                chatHistory.clear()
+                outputView.text = "Chatverlauf geleert."
+                statusView.text = "Chat ist bereit."
+            }
+        }
+        promptCard.addView(clearChatButton, matchWidth(bottom = 8))
         promptInput = EditText(this).apply {
             minLines = 4
             maxLines = 10
@@ -594,22 +644,29 @@ class MainActivity : ComponentActivity() {
             statusView.text = "Zuerst ein GGUF-Modell laden."
             return
         }
-        val prompt = promptInput.text.toString()
-        if (prompt.isBlank()) {
+        val userPrompt = promptInput.text.toString()
+        if (userPrompt.isBlank()) {
             statusView.text = "Prompt darf nicht leer sein."
             return
         }
+        val messages = if (chatModeEnabled) {
+            buildList {
+                systemPromptInput.text.toString().trim().takeIf { it.isNotEmpty() }
+                    ?.let { add(ChatMessage("system", it)) }
+                addAll(chatHistory)
+                add(ChatMessage("user", userPrompt))
+            }
+        } else emptyList()
 
         setBusy(true, cancelable = true)
         statusView.text = "Generierung läuft · ${model.displayName}"
         outputView.text = ""
-
         activeOperationJob = activityScope.launch {
             try {
                 val settings = inferenceSettings
                 val result = withContext(Dispatchers.IO) {
                     engine().generate(
-                        prompt = prompt,
+                        prompt = if (chatModeEnabled) "" else userPrompt,
                         config = GenerationConfig(
                             maxOutputTokens = settings.maxOutputTokens,
                             timeoutMillis = settings.timeoutMillis,
@@ -617,10 +674,15 @@ class MainActivity : ComponentActivity() {
                             topP = settings.topP,
                             topK = settings.topK,
                             seed = settings.seed,
+                            chatMessages = messages,
                         ),
                     )
                 }
                 outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
+                if (chatModeEnabled && result.text.isNotBlank()) {
+                    chatHistory += ChatMessage("user", userPrompt)
+                    chatHistory += ChatMessage("assistant", result.text)
+                }
                 val rate = if (result.generationElapsedMillis > 0L) {
                     result.generatedTokens * 1_000.0 / result.generationElapsedMillis
                 } else 0.0
@@ -1064,7 +1126,7 @@ class MainActivity : ComponentActivity() {
                     inference = inference,
                     label = "Lange-Generierung-Abbruch",
                     prompt = "Write a very long essay about local language models. Do not stop early.",
-                    maxOutputTokens = 8192,
+                    maxOutputTokens = (model.contextTokens / 2).coerceIn(32, 1024),
                     delayMillis = 3_000L,
                 )
                 results += recoveryProbe(inference, "Recovery nach Decode-Abbruch")
@@ -1074,7 +1136,7 @@ class MainActivity : ComponentActivity() {
                         inference.generate(
                             prompt = "Explain local language model inference in detail.",
                             config = GenerationConfig(
-                                maxOutputTokens = 8192,
+                                maxOutputTokens = (model.contextTokens / 2).coerceIn(32, 1024),
                                 timeoutMillis = 1_000L,
                             ),
                         )
