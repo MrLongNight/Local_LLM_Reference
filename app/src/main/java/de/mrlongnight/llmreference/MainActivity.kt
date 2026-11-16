@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
             text = "Lokale Modelle testen"
             textSize = 27f
             setTypeface(typeface, Typeface.BOLD)
+            if (android.os.Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
         }
         content.addView(pageTitleView, matchWidth())
 
@@ -185,6 +186,7 @@ class MainActivity : ComponentActivity() {
         statusView = TextView(this).apply {
             text = "Bereit."
             textSize = 14f
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
             setPadding(0, dp(2), 0, 0)
             minHeight = dp(28)
         }
@@ -244,6 +246,7 @@ class MainActivity : ComponentActivity() {
             text = title
             textSize = 18f
             setTypeface(typeface, Typeface.BOLD)
+            if (android.os.Build.VERSION.SDK_INT >= 28) isAccessibilityHeading = true
             setPadding(0, 0, 0, dp(10))
         }, matchWidth())
         surfaceCards += card

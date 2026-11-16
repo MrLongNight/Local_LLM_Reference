@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "product": "Local LLM Reference",
+  "features": [
+    {
+      "id": "local-inference-workspace",
+      "name": "Local inference workspace",
+      "description": "One-screen reference client for selecting a GGUF model, running completion and measuring CPU inference.",
+      "flows": [
+        {
+          "id": "load-and-test-a-local-model",
+          "name": "Load and test a local model",
+          "description": "Select an original GGUF file, run completion or a CPU benchmark, inspect output and export diagnostics.",
+          "steps": [
+            {
+              "name": "Reference workspace",
+              "route": "/",
+              "screen": "MainActivity",
+              "action": "Select a GGUF model, enter a prompt and generate output.",
+              "components": [
+                "MainActivity",
+                "model selection card",
+                "prompt editor",
+                "generation action",
+                "status card",
+                "output card",
+                "secondary actions menu"
+              ],
+              "data": [
+                "ModelDescriptor",
+                "GenerationConfig",
+                "BenchmarkPlan",
+                "EngineDiagnostics"
+              ]
+            }
+          ]
+        }
+      ],
+      "components": []
+    }
+  ]
+}
