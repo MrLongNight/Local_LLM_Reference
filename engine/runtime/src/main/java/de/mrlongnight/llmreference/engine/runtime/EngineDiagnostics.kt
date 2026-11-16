@@ -72,6 +72,15 @@ object EngineDiagnostics {
                 android.util.Log.w("EngineDiagnostics", "Could not remove oversized legacy diagnostics file")
             }
         }
+        // Enforce the new hard cap immediately when upgrading from an older .log format.
+        listOf(
+            File(directory, "$process.log"),
+            File(directory, "$process.log.1")
+        ).forEach { existing ->
+            if (existing.exists() && existing.length() > MAX_FILE_BYTES && !existing.delete()) {
+                android.util.Log.e("EngineDiagnostics", "Could not remove oversized diagnostics log")
+            }
+        }
 
         info("diagnostics", "logger_ready", mapOf(
             "sdk" to Build.VERSION.SDK_INT,
@@ -127,7 +136,7 @@ object EngineDiagnostics {
                 attributes = safeAttributes
             ) + "\n"
         } catch (failure: RuntimeException) {
-            droppedRecords.addAndGet(droppedBeforeRecord + 1L)
+            recordDropped(droppedBeforeRecord + 1L)
             android.util.Log.e("EngineDiagnostics", "Could not format diagnostics record", failure)
             return
         }
@@ -136,19 +145,17 @@ object EngineDiagnostics {
         try {
             writer.execute { appendRecord(directory, process, bytes, level, component, event) }
         } catch (_: RejectedExecutionException) {
-            droppedRecords.addAndGet(droppedBeforeRecord + 1L)
-            android.util.Log.w("EngineDiagnostics", "Diagnostics queue full; record dropped")
+            recordDropped(droppedBeforeRecord + 1L)
         }
 
-        android.util.Log.println(
-            when (level) {
-                "ERROR" -> android.util.Log.ERROR
-                "WARN" -> android.util.Log.WARN
-                else -> android.util.Log.INFO
-            },
-            "EngineDiagnostics",
-            "$component/$event"
-        )
+        // INFO events already live in the compact file; duplicating every one in Logcat adds noise.
+        if (level != "INFO") {
+            android.util.Log.println(
+                if (level == "ERROR") android.util.Log.ERROR else android.util.Log.WARN,
+                "EngineDiagnostics",
+                "$component/$event"
+            )
+        }
     }
 
     private fun appendRecord(
@@ -164,15 +171,23 @@ object EngineDiagnostics {
             rotateIfNeeded(target, bytes.size.toLong())
             FileOutputStream(target, true).use { stream -> stream.write(bytes) }
         } catch (failure: IOException) {
-            droppedRecords.incrementAndGet()
+            recordDropped(1L)
             android.util.Log.e(
                 "EngineDiagnostics",
                 "Could not append $level $component/$event diagnostics record",
                 failure
             )
         } catch (failure: RuntimeException) {
-            droppedRecords.incrementAndGet()
+            recordDropped(1L)
             android.util.Log.e("EngineDiagnostics", "Diagnostics writer failed", failure)
+        }
+    }
+
+    private fun recordDropped(count: Long) {
+        val total = droppedRecords.addAndGet(count)
+        // Avoid turning a sustained writer overload into a second high-volume Logcat stream.
+        if (total == count || total % 100L == 0L) {
+            android.util.Log.w("EngineDiagnostics", "Dropped diagnostics records: $total")
         }
     }
 
@@ -180,10 +195,11 @@ object EngineDiagnostics {
         if (!target.exists() || target.length() + incomingBytes <= MAX_FILE_BYTES) return
         val previous = File(target.parentFile, target.name + ".1")
         if (previous.exists() && !previous.delete()) {
-            android.util.Log.w("EngineDiagnostics", "Could not remove previous diagnostics rotation")
+            throw IOException("Could not remove previous diagnostics rotation.")
         }
         if (!target.renameTo(previous)) {
-            android.util.Log.w("EngineDiagnostics", "Could not rotate diagnostics file")
+            // Fail closed: never keep appending if rotation failed, or the size cap is meaningless.
+            throw IOException("Could not rotate diagnostics file.")
         }
     }
 

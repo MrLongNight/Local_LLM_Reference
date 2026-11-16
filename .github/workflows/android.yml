@@ -51,7 +51,7 @@ jobs:
       - name: Verify pinned dependencies
         run: |
           echo "621008afc4f5d59357fcf06ffa644dd5aade5e091bdc363742710445f73cdaf8  gradle/wrapper/gradle-wrapper.jar" | sha256sum --check
-          test "$(git -C third_party/llama.cpp rev-parse HEAD)" = "05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5"
+          test "$(git -C third_party/llama.cpp rev-parse HEAD)" = "a946eb541a6d3051496bdcc451a0fa85772b8dfd"
       - name: Report toolchain
         run: |
           java -version

@@ -92,8 +92,6 @@ class InferenceService : Service() {
                 if (!accepted) {
                     replyUnavailable(request)
                     request.recycle()
-                } else {
-                }
             }
             true
         })

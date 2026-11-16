@@ -6,7 +6,8 @@ Last updated: 2026-11-16
 
 - [x] Modular repository layout on `main`: app, api, runtime, native and benchmark modules.
 - [x] Platform-neutral API contracts for model metadata, generation configuration/results and inference lifecycle.
-- [x] Exact llama.cpp submodule pin at upstream commit `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5` (verified signed upstream commit).
+- [x] Exact llama.cpp submodule pin at upstream commit `a946eb541a6d3051496bdcc451a0fa85772b8dfd` (verified signed upstream commit).
+- [x] llama.cpp refreshed to the latest signed upstream master commit checked on 2026-11-16; Android CI pin gate/build verification is pending.
 - [x] Native CPU-only JNI baseline using the pinned upstream llama API.
 - [x] Original model descriptor access by file descriptor; no engine-owned GGUF copy/rename.
 - [x] Dedicated Android inference process and serialized worker execution.
@@ -39,7 +40,8 @@ Last updated: 2026-11-16
 
 ## Verified
 
-- [x] Updated llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact succeeded (run 43811994968).
+- [x] Previous llama.cpp pin `05db09a4d3c3c1caa7cda31f98eca6ae28d92eb5`: clean native Android build, unit tests and APK artifact succeeded (run 43811994968).
+- [ ] New llama.cpp pin `a946eb541a6d3051496bdcc451a0fa85772b8dfd`: CI verification pending after updating the workflow's exact-pin gate.
 - [x] Immutable GitHub Actions SHA pins and thread-default correction built successfully (run 43813347672).
 - [x] Current full verification, including model-session ownership tests: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a2a2373e8d5059f727b559209bec20999e409290` (run 43815308166).
 - [x] APK artifact `local-llm-reference-debug-apk`: 31,880,247 bytes, SHA-256 `93d38d8fb26fe8ea9b6f01124c1708c33f08aa46abdc14174dd98d5a7bc969b5`.
