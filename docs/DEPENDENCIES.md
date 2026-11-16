@@ -30,6 +30,19 @@ Kotlin 2.4.21 is the latest stable Kotlin release checked on 2026-11-16. However
 
 CMake 4.5.0 was checked as the newest general CMake release on 2026-11-16. It is not silently substituted into the Android build yet: the exact pinned llama.cpp source's official Android sample uses CMake 3.31.6. That known configuration is retained for the first reproducible baseline. A move to CMake 4.x requires a separate CI build comparison, not just a version-number update.
 
+## GitHub Actions supply-chain pins
+
+The workflow pins each action to an immutable full commit SHA rather than a mutable version tag. The accompanying version comment preserves Dependabot's update visibility. Each SHA was resolved from the corresponding current stable tag and its commit signature was verified on 2026-11-16:
+
+| Action | Current stable tag | Verified commit SHA |
+|---|---|---|
+| actions/checkout | v7.0.1 | `3d3c42e5aac5ba805825da76410c181273ba90b1` |
+| actions/setup-java | v6.3.0 | `d1374f8ac74474200d16ef8ecee22c7ae7a51880` |
+| gradle/actions/setup-gradle | v6.4.1 | `8da46b539cd8fe6ab27ca75128919a18d757604c` |
+| actions/upload-artifact | v7.0.2 | `cf430e030ddbb5b0abf93d22962f4752f3646cd9` |
+
+The official Android CLI bootstrap URL is currently published by Google as a `latest` installer. The installed CLI reports its actual version in every CI run; Android SDK packages themselves are installed by explicit package/version identifiers. This is the only intentionally rolling bootstrap component in the workflow and must be reviewed against Google's release notes.
+
 ## Upstream references
 
 - AGP releases and Gradle compatibility: https://developer.android.com/build/releases/about-agp
@@ -54,3 +67,4 @@ A Dependabot proposal is not automatically accepted. For each update:
 2. Update only the relevant pin(s), including wrapper checksums when Gradle changes.
 3. Run the clean Android build and inspect the produced APK artifact.
 4. For native dependency changes, build both supported ABIs and verify an on-device smoke test before changing the pinned reference.
+5. For GitHub Actions, review the upstream release notes, resolve the official tag to its full commit SHA, and verify the commit signature before updating the workflow.
