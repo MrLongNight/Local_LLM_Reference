@@ -40,6 +40,7 @@ import java.util.Locale
 import java.security.MessageDigest
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -855,16 +856,31 @@ class MainActivity : ComponentActivity() {
                 outputView.text = "Vergleich abgebrochen: ${error.message ?: error.javaClass.simpleName}"
                 statusView.text = "CPU/Vulkan-Vergleich unvollständig"
             } finally {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        val restored = original.copy(sha256 = sha256ForUri(original.sourceUri))
-                        engine().loadModel(restored)
-                        selectedModel = restored
+                var restoreFailure: String? = null
+                if (!isDestroyed && !isFinishing) {
+                    try {
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            val restoreStarted = SystemClock.elapsedRealtime()
+                            val restored = original.copy(sha256 = sha256ForUri(original.sourceUri))
+                            engine().loadModel(restored)
+                            selectedModel = restored
+                            modelLoadElapsedMillis = SystemClock.elapsedRealtime() - restoreStarted
+                        }
+                    } catch (restoreError: Exception) {
+                        selectedModel = null
+                        restoreFailure = restoreError.message ?: restoreError.javaClass.simpleName
+                        EngineDiagnostics.error("benchmark", "original_model_restore_failed", mapOf(
+                            "error_class" to restoreError.javaClass.simpleName
+                        ))
                     }
                 }
                 if (activeOperationJob === coroutineContext[Job]) {
                     activeOperationJob = null
                     setBusy(false)
+                    restoreFailure?.let { reason ->
+                        outputView.text = "Ursprüngliches Modell konnte nicht wiederhergestellt werden: $reason"
+                        statusView.text = "Modell nicht geladen – bitte erneut laden"
+                    }
                 }
             }
         }
