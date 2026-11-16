@@ -39,6 +39,11 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     private val appContext = context.applicationContext
     private val operationMutex = Mutex()
     private val pending = ConcurrentHashMap<Int, CancellableContinuation<Bundle>>()
+
+    init {
+        EngineDiagnostics.initialize(appContext, "app")
+        EngineDiagnostics.info("engine_client", "created")
+    }
     @Volatile private var remoteMessenger: Messenger? = null
     @Volatile private var activeConnection: ServiceConnection? = null
     @Volatile private var isBound = false
@@ -47,11 +52,15 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
         val continuation = pending.remove(reply.arg1)
         if (continuation != null && continuation.isActive) {
             if (reply.arg2 == InferenceIpc.STATUS_OK) {
+                EngineDiagnostics.info("ipc", "response_received", mapOf("request_id" to reply.arg1))
                 continuation.resume(reply.data ?: Bundle())
             } else {
                 val detail = reply.data?.getString(InferenceIpc.KEY_ERROR) ?: "Inference service failed."
+                EngineDiagnostics.error("ipc", "request_failed", mapOf("request_id" to reply.arg1))
                 continuation.resumeWithException(InferenceEngineException(detail))
             }
+        } else {
+            EngineDiagnostics.warn("ipc", "late_or_unmatched_response", mapOf("request_id" to reply.arg1))
         }
         true
     })
@@ -59,14 +68,25 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     override suspend fun loadModel(model: ModelDescriptor) {
         require(model.contextTokens >= 32) { "Context size must be at least 32 tokens." }
         require(model.threads >= 0) { "Thread count cannot be negative." }
-        val descriptor = openModelDescriptor(model.sourceUri)
-        descriptor.use {
-            val payload = Bundle().apply {
-                putParcelable(InferenceIpc.KEY_DESCRIPTOR, it)
-                putInt(InferenceIpc.KEY_CONTEXT_TOKENS, model.contextTokens)
-                putInt(InferenceIpc.KEY_THREADS, model.threads)
+        EngineDiagnostics.info("model", "load_requested", mapOf(
+            "size_bytes" to model.sizeBytes,
+            "context_tokens" to model.contextTokens,
+            "threads_requested" to model.threads
+        ))
+        try {
+            val descriptor = openModelDescriptor(model.sourceUri)
+            descriptor.use {
+                val payload = Bundle().apply {
+                    putParcelable(InferenceIpc.KEY_DESCRIPTOR, it)
+                    putInt(InferenceIpc.KEY_CONTEXT_TOKENS, model.contextTokens)
+                    putInt(InferenceIpc.KEY_THREADS, model.threads)
+                }
+                request(InferenceIpc.LOAD_MODEL, payload)
             }
-            request(InferenceIpc.LOAD_MODEL, payload)
+            EngineDiagnostics.info("model", "load_completed", mapOf("context_tokens" to model.contextTokens))
+        } catch (error: Exception) {
+            EngineDiagnostics.error("model", "load_failed", mapOf("error_class" to error.javaClass.simpleName))
+            throw error
         }
     }
 
@@ -78,16 +98,28 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
             putString(InferenceIpc.KEY_PROMPT, prompt)
             putInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, config.maxOutputTokens)
         }
+        EngineDiagnostics.info("generation", "request_started", mapOf(
+            "prompt_characters" to prompt.length,
+            "max_output_tokens" to config.maxOutputTokens,
+            "timeout_ms" to config.timeoutMillis
+        ))
         val result = try {
             withTimeout(config.timeoutMillis) {
                 request(InferenceIpc.GENERATE, payload)
             }
         } catch (error: TimeoutCancellationException) {
+            EngineDiagnostics.warn("generation", "request_timed_out", mapOf("timeout_ms" to config.timeoutMillis))
             throw InferenceEngineException(
                 "Generation timed out after ${config.timeoutMillis} ms; native work was asked to abort.",
                 error
             )
         }
+        EngineDiagnostics.info("generation", "request_completed", mapOf(
+            "prompt_tokens" to result.getInt(InferenceIpc.KEY_PROMPT_TOKENS),
+            "generated_tokens" to result.getInt(InferenceIpc.KEY_GENERATED_TOKENS),
+            "prompt_elapsed_ms" to result.getLong(InferenceIpc.KEY_PROMPT_ELAPSED_MILLIS),
+            "generation_elapsed_ms" to result.getLong(InferenceIpc.KEY_GENERATION_ELAPSED_MILLIS)
+        ))
         return GenerationResult(
             text = result.getString(InferenceIpc.KEY_TEXT).orEmpty(),
             promptTokens = result.getInt(InferenceIpc.KEY_PROMPT_TOKENS),
@@ -99,8 +131,13 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     }
 
     override suspend fun unload() {
+        EngineDiagnostics.info("model", "unload_requested")
         try {
             request(InferenceIpc.UNLOAD_MODEL)
+            EngineDiagnostics.info("model", "unload_completed")
+        } catch (error: Exception) {
+            EngineDiagnostics.error("model", "unload_failed", mapOf("error_class" to error.javaClass.simpleName))
+            throw error
         } finally {
             disconnect()
         }
@@ -113,6 +150,10 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
         operationMutex.withLock {
             val remote = ensureBound()
             val requestId = InferenceRequestIds.next()
+            EngineDiagnostics.info("ipc", "request_queued", mapOf(
+                "request_id" to requestId,
+                "command" to command
+            ))
             kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
                 pending[requestId] = continuation
                 // Serialize the initial send with cancellation. Otherwise a timeout can send
@@ -122,6 +163,11 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                 var cancelled = false
                 continuation.invokeOnCancellation {
                     pending.remove(requestId)
+                    EngineDiagnostics.warn("ipc", "request_cancelled", mapOf(
+                        "request_id" to requestId,
+                        "command" to command,
+                        "request_was_sent" to requestSent
+                    ))
                     synchronized(sendLock) {
                         cancelled = true
                         if (command == InferenceIpc.GENERATE && requestSent) {
@@ -145,8 +191,16 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                         try {
                             remote.send(message)
                             requestSent = true
+                            EngineDiagnostics.info("ipc", "request_sent", mapOf(
+                                "request_id" to requestId,
+                                "command" to command
+                            ))
                         } catch (error: RemoteException) {
                             pending.remove(requestId)
+                            EngineDiagnostics.error("ipc", "send_failed", mapOf(
+                                "request_id" to requestId,
+                                "command" to command
+                            ))
                             if (continuation.isActive) {
                                 continuation.resumeWithException(
                                     InferenceEngineException("Inference process is unavailable.", error)
@@ -163,6 +217,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
 
     private suspend fun ensureBound(): Messenger {
         remoteMessenger?.let { return it }
+        EngineDiagnostics.info("ipc", "service_bind_started")
         return try {
             withTimeout(15_000) {
                 withContext(Dispatchers.Main.immediate) {
@@ -180,6 +235,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                                     disconnect(this)
                                 } else if (continuation.isActive) {
                                     remoteMessenger = messenger
+                                    EngineDiagnostics.info("ipc", "service_connected")
                                     continuation.resume(messenger)
                                 } else {
                                     disconnect(this)
@@ -254,6 +310,9 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     }
 
     private fun failPending(message: String) {
+        EngineDiagnostics.error("ipc", "service_connection_lost", mapOf(
+            "pending_requests" to pending.size
+        ))
         val error = InferenceEngineException(message)
         pending.entries.toList().forEach { (id, continuation) ->
             if (pending.remove(id, continuation) && continuation.isActive) {
@@ -267,6 +326,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
         if (activeConnection !== connection) return
         remoteMessenger = null
         activeConnection = null
+        EngineDiagnostics.info("ipc", "service_disconnected")
         if (isBound) {
             isBound = false
             try {
