@@ -11,6 +11,7 @@ object NativeLlama {
 
     external fun nativeInitialize(): Boolean
     external fun nativeLoadModelFromFd(fd: Int, contextTokens: Int, threads: Int)
+    external fun nativeBeginGeneration()
     external fun nativeGenerate(prompt: String, maxOutputTokens: Int): String?
     /** Safe to invoke from the client dispatch thread while generation runs on the native worker. */
     external fun nativeAbortGeneration()
