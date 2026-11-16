@@ -25,9 +25,10 @@ Dependency direction: app → runtime → native; runtime → api; app → bench
 - Reference app selects a GGUF file through Android's document picker, retains the provider URI and displays the original file name.
 - Reference app runs direct completion without assuming a model-specific chat template.
 - The UI has a cancel button for generation and the benchmark.
-- Benchmark runner provides warmups, repeated measured samples, native vs wall-clock timings, averages and medians. Reports contain timing/token counts only, not prompt or generated text.
+- Native timing separates prompt prefill from token generation. End-to-end wall timing includes tokenizer, IPC and the full request.
+- Benchmark runner provides warmups, repeated measured samples, native prefill throughput, native generation throughput and end-to-end throughput. Reports contain timing/token counts only, not prompt or generated text.
 
-The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. Clean CI builds, benchmark unit tests and APK artifact upload have been verified. Real-device model loading, generation, cancellation and benchmark results remain to be verified.
+The first reference path supports decoder-only GGUF models and deterministic greedy sampling. It is a CPU baseline, not a performance claim. Clean CI builds, benchmark unit tests and APK artifact uploads have been verified. Real-device model loading, generation, cancellation and benchmark results remain to be verified.
 
 ## Build
 

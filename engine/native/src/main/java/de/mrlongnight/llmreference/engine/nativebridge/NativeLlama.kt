@@ -20,5 +20,8 @@ object NativeLlama {
     external fun nativeSystemInfo(): String
     external fun nativeLastPromptTokens(): Int
     external fun nativeLastGeneratedTokens(): Int
+    external fun nativeLastPromptElapsedMillis(): Long
+    external fun nativeLastGenerationElapsedMillis(): Long
+    /** Total native time from prompt prefill start through sampler completion. */
     external fun nativeLastElapsedMillis(): Long
 }

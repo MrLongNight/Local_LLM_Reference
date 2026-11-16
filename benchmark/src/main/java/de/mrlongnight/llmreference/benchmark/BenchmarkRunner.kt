@@ -19,14 +19,17 @@ data class BenchmarkPlan(
     }
 }
 
-/** A sample contains timings and token counts only; prompt and generated text are never retained. */
+/** Timings and token counts only; prompt and generated text are never retained in a report. */
 data class BenchmarkSample(
     val iteration: Int,
     val promptTokens: Int,
     val generatedTokens: Int,
+    val promptElapsedMillis: Long,
+    val generationElapsedMillis: Long,
     val nativeElapsedMillis: Long,
     val wallElapsedMillis: Long,
-    val nativeTokensPerSecond: Double,
+    val promptTokensPerSecond: Double,
+    val generationTokensPerSecond: Double,
     val wallTokensPerSecond: Double,
 )
 
@@ -36,10 +39,15 @@ data class BenchmarkReport(
     val warmupRuns: Int,
     val measuredRuns: Int,
     val samples: List<BenchmarkSample>,
-    val averageNativeTokensPerSecond: Double,
-    val medianNativeTokensPerSecond: Double,
+    val averagePromptTokensPerSecond: Double,
+    val medianPromptTokensPerSecond: Double,
+    val averageGenerationTokensPerSecond: Double,
+    val medianGenerationTokensPerSecond: Double,
     val averageWallTokensPerSecond: Double,
     val medianWallTokensPerSecond: Double,
+    val averagePromptElapsedMillis: Double,
+    val averageGenerationElapsedMillis: Double,
+    val averageNativeElapsedMillis: Double,
     val averageWallElapsedMillis: Double,
 )
 
@@ -47,8 +55,9 @@ class BenchmarkRunner {
     /**
      * Runs a warmup phase followed by measured iterations.
      *
-     * The model must already be loaded. Native timing excludes IPC overhead; wall timing includes
-     * the complete suspend call. Neither prompt text nor generated output is copied into the
+     * Prefill throughput uses prompt tokens / native prefill time. Decode throughput uses generated
+     * tokens / native generation time, excluding prompt prefill. Wall throughput includes the
+     * entire suspend call and IPC. Neither prompt text nor generated output is copied into the
      * returned report or logged by this runner.
      */
     suspend fun run(
@@ -75,21 +84,27 @@ class BenchmarkRunner {
             val result = engine.generate(plan.prompt, config)
             val wallElapsedMillis = ((System.nanoTime() - startedAt) / 1_000_000L)
                 .coerceAtLeast(1L)
-            val nativeElapsedMillis = result.elapsedMillis.coerceAtLeast(1L)
+            val promptElapsedMillis = result.promptElapsedMillis.coerceAtLeast(1L)
+            val generationElapsedMillis = result.generationElapsedMillis.coerceAtLeast(1L)
+            val promptTokens = result.promptTokens.coerceAtLeast(0)
             val generatedTokens = result.generatedTokens.coerceAtLeast(0)
 
             samples += BenchmarkSample(
                 iteration = index + 1,
-                promptTokens = result.promptTokens.coerceAtLeast(0),
+                promptTokens = promptTokens,
                 generatedTokens = generatedTokens,
+                promptElapsedMillis = result.promptElapsedMillis.coerceAtLeast(0L),
+                generationElapsedMillis = result.generationElapsedMillis.coerceAtLeast(0L),
                 nativeElapsedMillis = result.elapsedMillis.coerceAtLeast(0L),
                 wallElapsedMillis = wallElapsedMillis,
-                nativeTokensPerSecond = generatedTokens * 1_000.0 / nativeElapsedMillis,
+                promptTokensPerSecond = promptTokens * 1_000.0 / promptElapsedMillis,
+                generationTokensPerSecond = generatedTokens * 1_000.0 / generationElapsedMillis,
                 wallTokensPerSecond = generatedTokens * 1_000.0 / wallElapsedMillis,
             )
         }
 
-        val nativeRates = samples.map { it.nativeTokensPerSecond }
+        val promptRates = samples.map { it.promptTokensPerSecond }
+        val generationRates = samples.map { it.generationTokensPerSecond }
         val wallRates = samples.map { it.wallTokensPerSecond }
 
         return BenchmarkReport(
@@ -98,10 +113,15 @@ class BenchmarkRunner {
             warmupRuns = plan.warmupRuns,
             measuredRuns = plan.measuredRuns,
             samples = samples.toList(),
-            averageNativeTokensPerSecond = nativeRates.average(),
-            medianNativeTokensPerSecond = nativeRates.median(),
+            averagePromptTokensPerSecond = promptRates.average(),
+            medianPromptTokensPerSecond = promptRates.median(),
+            averageGenerationTokensPerSecond = generationRates.average(),
+            medianGenerationTokensPerSecond = generationRates.median(),
             averageWallTokensPerSecond = wallRates.average(),
             medianWallTokensPerSecond = wallRates.median(),
+            averagePromptElapsedMillis = samples.map { it.promptElapsedMillis.toDouble() }.average(),
+            averageGenerationElapsedMillis = samples.map { it.generationElapsedMillis.toDouble() }.average(),
+            averageNativeElapsedMillis = samples.map { it.nativeElapsedMillis.toDouble() }.average(),
             averageWallElapsedMillis = samples.map { it.wallElapsedMillis.toDouble() }.average(),
         )
     }

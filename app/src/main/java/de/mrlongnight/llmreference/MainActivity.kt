@@ -253,18 +253,20 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 outputView.text = result.text.ifBlank { "(Keine Textausgabe)" }
-                val rate = if (result.elapsedMillis > 0L) {
-                    result.generatedTokens * 1_000.0 / result.elapsedMillis
+                val generationRate = if (result.generationElapsedMillis > 0L) {
+                    result.generatedTokens * 1_000.0 / result.generationElapsedMillis
                 } else {
                     0.0
                 }
                 statusView.text = String.format(
                     Locale.ROOT,
-                    "Fertig · Prompt %d Tokens · Ausgabe %d Tokens · %d ms · %.2f Tokens/s",
+                    "Fertig · Prompt %d Tokens / %d ms · Ausgabe %d Tokens / %d ms · Gesamt %d ms · %.2f Gen tok/s",
                     result.promptTokens,
+                    result.promptElapsedMillis,
                     result.generatedTokens,
+                    result.generationElapsedMillis,
                     result.elapsedMillis,
-                    rate,
+                    generationRate,
                 )
             } catch (cancelled: CancellationException) {
                 statusView.text = "Generierung abgebrochen · native Abbruchanforderung gesendet"
@@ -314,20 +316,24 @@ class MainActivity : ComponentActivity() {
                 val details = report.samples.joinToString(separator = "\n") { sample ->
                     String.format(
                         Locale.ROOT,
-                        "Lauf %d: %d Tokens · Native %.2f tok/s · Gesamt %.2f tok/s · %d ms",
+                        "Lauf %d: Prefill %.2f tok/s · Gen %.2f tok/s · Gesamt %.2f tok/s · Prefill %d ms · Gen %d ms · Gesamt %d ms",
                         sample.iteration,
-                        sample.generatedTokens,
-                        sample.nativeTokensPerSecond,
+                        sample.promptTokensPerSecond,
+                        sample.generationTokensPerSecond,
                         sample.wallTokensPerSecond,
+                        sample.promptElapsedMillis,
+                        sample.generationElapsedMillis,
                         sample.wallElapsedMillis,
                     )
                 }
                 outputView.text = String.format(
                     Locale.ROOT,
-                    "%s\n\nMittelwert Native: %.2f tok/s\nMedian Native: %.2f tok/s\nMittelwert Gesamt: %.2f tok/s\nMedian Gesamt: %.2f tok/s\n\n%s",
+                    "%s\n\nMittelwert Prefill: %.2f tok/s\nMedian Prefill: %.2f tok/s\nMittelwert Generierung: %.2f tok/s\nMedian Generierung: %.2f tok/s\nMittelwert Gesamt: %.2f tok/s\nMedian Gesamt: %.2f tok/s\n\n%s",
                     report.modelDisplayName,
-                    report.averageNativeTokensPerSecond,
-                    report.medianNativeTokensPerSecond,
+                    report.averagePromptTokensPerSecond,
+                    report.medianPromptTokensPerSecond,
+                    report.averageGenerationTokensPerSecond,
+                    report.medianGenerationTokensPerSecond,
                     report.averageWallTokensPerSecond,
                     report.medianWallTokensPerSecond,
                     details,

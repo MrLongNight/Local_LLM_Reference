@@ -17,10 +17,16 @@ data class GenerationConfig(
     val timeoutMillis: Long = 180_000L,
 )
 
+/**
+ * Result timing separates prompt prefill from token generation.
+ * elapsedMillis is native end-to-end time from prefill start to sampler completion.
+ */
 data class GenerationResult(
     val text: String,
     val promptTokens: Int,
     val generatedTokens: Int,
+    val promptElapsedMillis: Long,
+    val generationElapsedMillis: Long,
     val elapsedMillis: Long,
 )
 

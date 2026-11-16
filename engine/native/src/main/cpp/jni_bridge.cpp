@@ -22,6 +22,8 @@ llama_model * g_model = nullptr;
 llama_context * g_context = nullptr;
 int32_t g_last_prompt_tokens = 0;
 int32_t g_last_generated_tokens = 0;
+int64_t g_last_prompt_elapsed_ms = 0;
+int64_t g_last_generation_elapsed_ms = 0;
 int64_t g_last_elapsed_ms = 0;
 std::atomic<bool> g_abort_requested{false};
 
@@ -40,6 +42,8 @@ void releaseModelLocked() {
     if (g_model_file != nullptr) { fclose(g_model_file); g_model_file = nullptr; }
     g_last_prompt_tokens = 0;
     g_last_generated_tokens = 0;
+    g_last_prompt_elapsed_ms = 0;
+    g_last_generation_elapsed_ms = 0;
     g_last_elapsed_ms = 0;
 }
 
@@ -241,6 +245,11 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         JNIEnv * env, jobject, jstring jPrompt, jint maxOutputTokens) {
     std::lock_guard<std::mutex> lock(g_mutex);
+    g_last_prompt_tokens = 0;
+    g_last_generated_tokens = 0;
+    g_last_prompt_elapsed_ms = 0;
+    g_last_generation_elapsed_ms = 0;
+    g_last_elapsed_ms = 0;
     if (g_model == nullptr || g_context == nullptr) {
         throwJava(env, "No model is loaded.");
         return nullptr;
@@ -278,12 +287,13 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
     }
 
     llama_memory_clear(llama_get_memory(g_context), false);
-    const auto started = std::chrono::steady_clock::now();
+    const auto promptStarted = std::chrono::steady_clock::now();
     if (!decodeTokenBatch(tokens, 0)) {
         const bool aborted = g_abort_requested.exchange(false, std::memory_order_acq_rel);
         throwJava(env, aborted ? "Generation cancelled." : "Prompt evaluation failed.");
         return nullptr;
     }
+    const auto promptFinished = std::chrono::steady_clock::now();
 
     llama_sampler_chain_params samplerParams = llama_sampler_chain_default_params();
     samplerParams.no_perf = true;
@@ -294,6 +304,7 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
     }
     llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
 
+    const auto generationStarted = std::chrono::steady_clock::now();
     std::string output;
     int32_t generated = 0;
     llama_pos nextPosition = static_cast<llama_pos>(tokens.size());
@@ -321,12 +332,21 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
     }
     llama_sampler_free(sampler);
 
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - started).count();
+    const auto generationFinished = std::chrono::steady_clock::now();
+    const auto totalFinished = generationFinished;
+    const auto promptElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        promptFinished - promptStarted).count();
+    const auto generationElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        generationFinished - generationStarted).count();
+    const auto totalElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        totalFinished - promptStarted).count();
+
     g_abort_requested.store(false, std::memory_order_release);
     g_last_prompt_tokens = tokenCount;
     g_last_generated_tokens = generated;
-    g_last_elapsed_ms = elapsed;
+    g_last_prompt_elapsed_ms = promptElapsed;
+    g_last_generation_elapsed_ms = generationElapsed;
+    g_last_elapsed_ms = totalElapsed;
     return fromUtf8(env, output);
 }
 
@@ -376,6 +396,18 @@ extern "C" JNIEXPORT jint JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLastGeneratedTokens(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(g_mutex);
     return g_last_generated_tokens;
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLastPromptElapsedMillis(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return static_cast<jlong>(g_last_prompt_elapsed_ms);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLastGenerationElapsedMillis(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return static_cast<jlong>(g_last_generation_elapsed_ms);
 }
 
 extern "C" JNIEXPORT jlong JNICALL

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test
 
 class BenchmarkRunnerTest {
     @Test
-    fun warmupsAreExcludedAndMeasuredStatisticsAreCalculated() = runBlocking {
+    fun warmupsAreExcludedAndPrefillDecodeRatesAreSeparated() = runBlocking {
         val engine = FakeInferenceEngine(
             results = listOf(
                 result(generatedTokens = 1), // warmup
@@ -34,14 +34,17 @@ class BenchmarkRunnerTest {
         assertEquals(4, engine.calls)
         assertEquals(3, report.samples.size)
         assertEquals(2, report.samples.first().generatedTokens)
-        assertEquals(4.0, report.averageNativeTokensPerSecond, 0.001)
-        assertEquals(4.0, report.medianNativeTokensPerSecond, 0.001)
+        assertEquals(10.0, report.averagePromptTokensPerSecond, 0.001)
+        assertEquals(8.0, report.averageGenerationTokensPerSecond, 0.001)
+        assertEquals(8.0, report.medianGenerationTokensPerSecond, 0.001)
     }
 
     private fun result(generatedTokens: Int) = GenerationResult(
         text = "not retained in report",
         promptTokens = 5,
         generatedTokens = generatedTokens,
+        promptElapsedMillis = 500,
+        generationElapsedMillis = 500,
         elapsedMillis = 1_000,
     )
 

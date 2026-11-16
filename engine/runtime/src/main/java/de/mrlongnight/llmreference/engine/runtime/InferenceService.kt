@@ -143,6 +143,14 @@ class InferenceService : Service() {
             response.putString(InferenceIpc.KEY_TEXT, text)
             response.putInt(InferenceIpc.KEY_PROMPT_TOKENS, NativeLlama.nativeLastPromptTokens())
             response.putInt(InferenceIpc.KEY_GENERATED_TOKENS, NativeLlama.nativeLastGeneratedTokens())
+            response.putLong(
+                InferenceIpc.KEY_PROMPT_ELAPSED_MILLIS,
+                NativeLlama.nativeLastPromptElapsedMillis()
+            )
+            response.putLong(
+                InferenceIpc.KEY_GENERATION_ELAPSED_MILLIS,
+                NativeLlama.nativeLastGenerationElapsedMillis()
+            )
             response.putLong(InferenceIpc.KEY_ELAPSED_MILLIS, NativeLlama.nativeLastElapsedMillis())
         } finally {
             activeRequestId.compareAndSet(requestId, 0)

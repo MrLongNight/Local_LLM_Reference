@@ -27,9 +27,18 @@ All native model objects belong to the dedicated Android process `:llm_inference
 
 The runtime passes a duplicated, seekable file descriptor to llama.cpp and retains its owning `FILE*` until the model is freed. The engine does not copy or rename model files.
 
+## Timing semantics
+
+Native timing reports three distinct values:
+- Prompt prefill: prompt-token batch evaluation in llama.cpp, excluding tokenizer work.
+- Generation: autoregressive decode loop after prefill, excluding prompt prefill.
+- Native total: prefill through sampler completion, including sampler setup.
+
+Wall timing wraps the complete suspend request, so it also includes tokenization, IPC and runtime overhead. Generation tok/s must be compared using generation time, not total time. This avoids mislabelling prefill-heavy runs as slow token decoding.
+
 ## Reference client
 
-The app uses Android's document picker and sends the selected original `content://` URI to runtime. The initial UI intentionally tests raw text completion without assuming a model-specific chat template. It exposes cancellation and a short CPU benchmark (one warmup plus three measured generations). Results show token counts and native vs wall-clock throughput only. It is a smoke-test UI, not the final end-user chat experience.
+The app uses Android's document picker and sends the selected original `content://` URI to runtime. The initial UI intentionally tests raw text completion without assuming a model-specific chat template. It exposes cancellation and a short CPU benchmark (one warmup plus three measured generations). The UI displays prefill, generation and end-to-end measurements separately. It is a smoke-test UI, not the final end-user chat experience.
 
 ## Milestones
 

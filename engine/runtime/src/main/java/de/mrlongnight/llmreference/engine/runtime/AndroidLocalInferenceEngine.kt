@@ -94,6 +94,8 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
             text = result.getString(InferenceIpc.KEY_TEXT).orEmpty(),
             promptTokens = result.getInt(InferenceIpc.KEY_PROMPT_TOKENS),
             generatedTokens = result.getInt(InferenceIpc.KEY_GENERATED_TOKENS),
+            promptElapsedMillis = result.getLong(InferenceIpc.KEY_PROMPT_ELAPSED_MILLIS),
+            generationElapsedMillis = result.getLong(InferenceIpc.KEY_GENERATION_ELAPSED_MILLIS),
             elapsedMillis = result.getLong(InferenceIpc.KEY_ELAPSED_MILLIS)
         )
     }

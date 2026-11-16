@@ -19,6 +19,8 @@ internal object InferenceIpc {
     const val KEY_TEXT = "text"
     const val KEY_PROMPT_TOKENS = "prompt_tokens"
     const val KEY_GENERATED_TOKENS = "generated_tokens"
+    const val KEY_PROMPT_ELAPSED_MILLIS = "prompt_elapsed_millis"
+    const val KEY_GENERATION_ELAPSED_MILLIS = "generation_elapsed_millis"
     const val KEY_ELAPSED_MILLIS = "elapsed_millis"
     const val KEY_SYSTEM_INFO = "system_info"
     const val KEY_ERROR = "error"
