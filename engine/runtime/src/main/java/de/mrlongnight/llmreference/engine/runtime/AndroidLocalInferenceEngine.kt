@@ -48,6 +48,8 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     @Volatile private var remoteMessenger: Messenger? = null
     @Volatile private var activeConnection: ServiceConnection? = null
     @Volatile private var isBound = false
+    @Volatile private var loadedModelName: String? = null
+    @Volatile private var loadedBackend: String = "CPU"
 
     private val replyMessenger = Messenger(Handler(Looper.getMainLooper()) { reply ->
         val continuation = pending.remove(reply.arg1)
@@ -74,8 +76,12 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                     putParcelable(InferenceIpc.KEY_DESCRIPTOR, it)
                     putInt(InferenceIpc.KEY_CONTEXT_TOKENS, model.contextTokens)
                     putInt(InferenceIpc.KEY_THREADS, model.threads)
+                    putInt(InferenceIpc.KEY_GPU_LAYERS, model.gpuLayers)
+                    putBoolean(InferenceIpc.KEY_USE_VULKAN, model.backend == de.mrlongnight.llmreference.engine.api.InferenceBackend.VULKAN)
                 }
                 request(InferenceIpc.LOAD_MODEL, payload)
+                loadedModelName = model.displayName
+                loadedBackend = model.backend.name
             }
         } catch (error: Exception) {
             EngineDiagnostics.error("model", "load_failed", mapOf("error_class" to error.javaClass.simpleName))
@@ -90,6 +96,10 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
         val payload = Bundle().apply {
             putString(InferenceIpc.KEY_PROMPT, prompt)
             putInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, config.maxOutputTokens)
+            putFloat(InferenceIpc.KEY_TEMPERATURE, config.temperature)
+            putFloat(InferenceIpc.KEY_TOP_P, config.topP)
+            putInt(InferenceIpc.KEY_TOP_K, config.topK)
+            putInt(InferenceIpc.KEY_SEED, config.seed)
         }
         val result = try {
             withTimeout(config.timeoutMillis) {
@@ -102,7 +112,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                 error
             )
         }
-        return GenerationResult(
+        val completed = GenerationResult(
             text = result.getString(InferenceIpc.KEY_TEXT).orEmpty(),
             promptTokens = result.getInt(InferenceIpc.KEY_PROMPT_TOKENS),
             generatedTokens = result.getInt(InferenceIpc.KEY_GENERATED_TOKENS),
@@ -110,6 +120,16 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
             generationElapsedMillis = result.getLong(InferenceIpc.KEY_GENERATION_ELAPSED_MILLIS),
             elapsedMillis = result.getLong(InferenceIpc.KEY_ELAPSED_MILLIS)
         )
+        EngineDiagnostics.interaction(
+            modelName = loadedModelName ?: "unknown",
+            backend = loadedBackend,
+            prompt = prompt,
+            answer = completed.text,
+            promptTokens = completed.promptTokens,
+            generatedTokens = completed.generatedTokens,
+            elapsedMillis = completed.elapsedMillis,
+        )
+        return completed
     }
 
     override suspend fun unload() {
