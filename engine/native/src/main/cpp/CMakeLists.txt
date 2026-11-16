@@ -104,8 +104,26 @@ if(ANDROID AND TARGET ggml-vulkan)
     )
     set(_android_vulkan_source "${CMAKE_CURRENT_BINARY_DIR}/ggml-vulkan-android.cpp")
     file(WRITE "${_android_vulkan_source}" "${_android_vulkan_contents}")
-    set_source_files_properties("${_upstream_vulkan_source}" PROPERTIES HEADER_FILE_ONLY TRUE)
-    target_sources(ggml-vulkan PRIVATE "${_android_vulkan_source}")
+
+    # Replace (do not supplement) the upstream translation unit. Source-file properties
+    # set from this parent directory do not reliably override a source added in the
+    # nested ggml directory, so filter the target's actual SOURCES property explicitly.
+    get_target_property(_ggml_vk_sources ggml-vulkan SOURCES)
+    set(_ggml_vk_android_sources "")
+    foreach(_source IN LISTS _ggml_vk_sources)
+        get_filename_component(_source_name "${_source}" NAME)
+        if(NOT _source_name STREQUAL "ggml-vulkan.cpp")
+            if(IS_ABSOLUTE "${_source}")
+                list(APPEND _ggml_vk_android_sources "${_source}")
+            else()
+                get_filename_component(_absolute_source "${_source}"
+                    ABSOLUTE BASE_DIR "${LLAMA_CPP_SOURCE}/ggml/src/ggml-vulkan")
+                list(APPEND _ggml_vk_android_sources "${_absolute_source}")
+            endif()
+        endif()
+    endforeach()
+    list(APPEND _ggml_vk_android_sources "${_android_vulkan_source}")
+    set_property(TARGET ggml-vulkan PROPERTY SOURCES "${_ggml_vk_android_sources}")
     target_include_directories(ggml-vulkan PRIVATE "${LLAMA_CPP_SOURCE}/ggml/src/ggml-vulkan")
 endif()
 
