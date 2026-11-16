@@ -344,6 +344,17 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeUnloadMod
     releaseModelLocked();
 }
 
+
+extern "C" JNIEXPORT void JNICALL
+Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeShutdown(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    releaseModelLocked();
+    if (g_backend_initialized) {
+        llama_backend_free();
+        g_backend_initialized = false;
+    }
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeSystemInfo(JNIEnv * env, jobject) {
     const char * info = llama_print_system_info();
