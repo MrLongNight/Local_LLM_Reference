@@ -307,7 +307,18 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
     int32_t generated = 0;
     llama_pos nextPosition = static_cast<llama_pos>(tokens.size());
     for (int32_t i = 0; i < maxOutputTokens; ++i) {
+        if (g_abort_requested.load(std::memory_order_acquire)) {
+            llama_sampler_free(sampler);
+            g_abort_requested.store(false, std::memory_order_release);
+            throwJava(env, "Generation cancelled.");
+            return nullptr;
+        }
         const llama_token token = llama_sampler_sample(sampler, g_context, -1);
+        if (g_abort_requested.exchange(false, std::memory_order_acq_rel)) {
+            llama_sampler_free(sampler);
+            throwJava(env, "Generation cancelled.");
+            return nullptr;
+        }
         llama_sampler_accept(sampler, token);
         if (llama_vocab_is_eog(vocab, token)) break;
         const std::string piece = tokenToUtf8(vocab, token);
@@ -329,6 +340,10 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         }
     }
     llama_sampler_free(sampler);
+    if (g_abort_requested.exchange(false, std::memory_order_acq_rel)) {
+        throwJava(env, "Generation cancelled.");
+        return nullptr;
+    }
 
     const auto generationFinished = std::chrono::steady_clock::now();
     const auto totalFinished = generationFinished;
