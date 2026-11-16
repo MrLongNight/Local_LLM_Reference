@@ -83,6 +83,32 @@ find_package(SPIRV-Headers CONFIG REQUIRED NO_CMAKE_FIND_ROOT_PATH)
 
 add_subdirectory("${LLAMA_CPP_SOURCE}" "${CMAKE_CURRENT_BINARY_DIR}/llama.cpp" EXCLUDE_FROM_ALL)
 
+if(ANDROID AND TARGET ggml-vulkan)
+    # Android API 24's Vulkan loader does not export the Vulkan 1.1
+    # vkGetPhysicalDeviceFeatures2 symbol. Upstream already initializes a Vulkan-Hpp
+    # dynamic dispatcher from vkGetInstanceProcAddr; route the three direct C calls
+    # through that dispatcher so the native library has no API-28+ loader import.
+    set(_upstream_vulkan_source "${LLAMA_CPP_SOURCE}/ggml/src/ggml-vulkan/ggml-vulkan.cpp")
+    file(READ "${_upstream_vulkan_source}" _upstream_vulkan_contents)
+    string(REGEX MATCHALL "vkGetPhysicalDeviceFeatures2\\(" _direct_features2_calls "${_upstream_vulkan_contents}")
+    list(LENGTH _direct_features2_calls _direct_features2_count)
+    if(NOT _direct_features2_count EQUAL 3)
+        message(FATAL_ERROR
+            "Pinned ggml Vulkan source changed: expected 3 direct vkGetPhysicalDeviceFeatures2 calls, found ${_direct_features2_count}. Review the Android API compatibility shim.")
+    endif()
+    string(REPLACE
+        "vkGetPhysicalDeviceFeatures2("
+        "ggml_vk_default_dispatcher().vkGetPhysicalDeviceFeatures2("
+        _android_vulkan_contents
+        "${_upstream_vulkan_contents}"
+    )
+    set(_android_vulkan_source "${CMAKE_CURRENT_BINARY_DIR}/ggml-vulkan-android.cpp")
+    file(WRITE "${_android_vulkan_source}" "${_android_vulkan_contents}")
+    set_source_files_properties("${_upstream_vulkan_source}" PROPERTIES HEADER_FILE_ONLY TRUE)
+    target_sources(ggml-vulkan PRIVATE "${_android_vulkan_source}")
+    target_include_directories(ggml-vulkan PRIVATE "${LLAMA_CPP_SOURCE}/ggml/src/ggml-vulkan")
+endif()
+
 add_library(llm_reference SHARED jni_bridge.cpp)
 target_include_directories(llm_reference PRIVATE
     "${LLAMA_CPP_SOURCE}/include"
