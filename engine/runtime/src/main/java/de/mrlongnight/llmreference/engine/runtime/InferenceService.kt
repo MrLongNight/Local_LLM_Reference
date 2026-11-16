@@ -261,8 +261,18 @@ class InferenceService : Service() {
         }
 
         val startedAt = SystemClock.elapsedRealtime()
-        val prompt = data.getString(InferenceIpc.KEY_PROMPT)
-            ?: error("Missing prompt.")
+        val rawPrompt = data.getString(InferenceIpc.KEY_PROMPT).orEmpty()
+        val chatRoles = data.getStringArrayList(InferenceIpc.KEY_CHAT_ROLES)
+        val chatContents = data.getStringArrayList(InferenceIpc.KEY_CHAT_CONTENTS)
+        val prompt = if (!chatRoles.isNullOrEmpty() || !chatContents.isNullOrEmpty()) {
+            check(chatRoles != null && chatContents != null && chatRoles.size == chatContents.size) {
+                "Chat message roles and contents are inconsistent."
+            }
+            NativeLlama.nativeFormatChat(chatRoles.toTypedArray(), chatContents.toTypedArray())
+                ?: error("This GGUF model does not expose a supported default chat template.")
+        } else {
+            rawPrompt.takeIf { it.isNotBlank() } ?: error("Missing prompt.")
+        }
         val maxOutputTokens = data.getInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, 256)
         val temperature = data.getFloat(InferenceIpc.KEY_TEMPERATURE, 0f)
         val topP = data.getFloat(InferenceIpc.KEY_TOP_P, 1f)
