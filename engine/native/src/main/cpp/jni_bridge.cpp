@@ -272,6 +272,77 @@ Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeLoadModel
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeFormatChat(
+        JNIEnv * env, jobject, jobjectArray jRoles, jobjectArray jContents) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_model == nullptr) {
+        throwJava(env, "No model is loaded.");
+        return nullptr;
+    }
+    if (jRoles == nullptr || jContents == nullptr) {
+        throwJava(env, "Chat messages are missing.");
+        return nullptr;
+    }
+    const jsize roleCount = env->GetArrayLength(jRoles);
+    const jsize contentCount = env->GetArrayLength(jContents);
+    if (roleCount <= 0 || roleCount != contentCount || roleCount > 256) {
+        throwJava(env, "Chat message arrays have an invalid size.");
+        return nullptr;
+    }
+
+    std::vector<std::string> roles;
+    std::vector<std::string> contents;
+    std::vector<llama_chat_message> messages;
+    roles.reserve(static_cast<size_t>(roleCount));
+    contents.reserve(static_cast<size_t>(contentCount));
+    messages.reserve(static_cast<size_t>(roleCount));
+    for (jsize index = 0; index < roleCount; ++index) {
+        auto roleObject = static_cast<jstring>(env->GetObjectArrayElement(jRoles, index));
+        auto contentObject = static_cast<jstring>(env->GetObjectArrayElement(jContents, index));
+        if (roleObject == nullptr || contentObject == nullptr) {
+            if (roleObject != nullptr) env->DeleteLocalRef(roleObject);
+            if (contentObject != nullptr) env->DeleteLocalRef(contentObject);
+            throwJava(env, "Chat messages cannot contain null role or content.");
+            return nullptr;
+        }
+        roles.push_back(toUtf8(env, roleObject));
+        contents.push_back(toUtf8(env, contentObject));
+        env->DeleteLocalRef(roleObject);
+        env->DeleteLocalRef(contentObject);
+        if (roles.back() != "system" && roles.back() != "user" && roles.back() != "assistant") {
+            throwJava(env, "Unsupported chat message role.");
+            return nullptr;
+        }
+        if (contents.back().empty()) {
+            throwJava(env, "Chat message content cannot be empty.");
+            return nullptr;
+        }
+        messages.push_back({roles.back().c_str(), contents.back().c_str()});
+    }
+
+    const char * chatTemplate = llama_model_chat_template(g_model, nullptr);
+    if (chatTemplate == nullptr || chatTemplate[0] == '\\0') {
+        throwJava(env, "The selected GGUF does not define a default chat template.");
+        return nullptr;
+    }
+    const int32_t required = llama_chat_apply_template(
+        chatTemplate, messages.data(), messages.size(), true, nullptr, 0);
+    if (required <= 0 || required > 1'000'000) {
+        throwJava(env, "llama.cpp could not apply the model chat template.");
+        return nullptr;
+    }
+    std::vector<char> prompt(static_cast<size_t>(required) + 1U, '\\0');
+    const int32_t written = llama_chat_apply_template(
+        chatTemplate, messages.data(), messages.size(), true,
+        prompt.data(), static_cast<int32_t>(prompt.size()));
+    if (written <= 0 || written > required) {
+        throwJava(env, "The formatted chat prompt exceeded its expected size.");
+        return nullptr;
+    }
+    return fromUtf8(env, std::string(prompt.data(), static_cast<size_t>(written)));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_de_mrlongnight_llmreference_engine_nativebridge_NativeLlama_nativeGenerate(
         JNIEnv * env, jobject, jstring jPrompt, jint maxOutputTokens, jfloat temperature, jfloat topP, jint topK, jint seed) {
     std::lock_guard<std::mutex> lock(g_mutex);
