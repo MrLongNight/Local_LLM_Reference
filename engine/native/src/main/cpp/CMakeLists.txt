@@ -31,8 +31,14 @@ set(GGML_VULKAN ON CACHE BOOL "" FORCE)
 set(GGML_CCACHE OFF CACHE BOOL "" FORCE)
 
 if(ANDROID)
-    # The NDK provides the Android Vulkan loader; glslc and SPIRV-Headers are host build tools.
-    set(Vulkan_INCLUDE_DIR "${CMAKE_SYSROOT}/usr/include" CACHE PATH "" FORCE)
+    # The Android NDK provides the target Vulkan loader library. Vulkan C++ headers and
+    # shader tools are host build dependencies and must be resolved outside the NDK sysroot.
+    find_path(_host_vulkan_include_dir
+        NAMES vulkan/vulkan.hpp
+        NO_CMAKE_FIND_ROOT_PATH
+        REQUIRED
+    )
+    set(Vulkan_INCLUDE_DIR "${_host_vulkan_include_dir}" CACHE PATH "" FORCE)
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(_vulkan_android_triple "aarch64-linux-android")
     elseif(ANDROID_ABI STREQUAL "x86_64")
