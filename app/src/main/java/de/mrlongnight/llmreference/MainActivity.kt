@@ -28,9 +28,13 @@ import de.mrlongnight.llmreference.engine.api.GenerationConfig
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import de.mrlongnight.llmreference.engine.runtime.AndroidLocalInferenceEngine
 import de.mrlongnight.llmreference.engine.runtime.EngineDiagnostics
+import de.mrlongnight.llmreference.engine.runtime.InferenceEngineException
 import java.util.Locale
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,6 +42,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /**
  * Intentionally small reference client. Prompting is raw completion, not a chat-template wrapper.
@@ -301,6 +306,13 @@ class MainActivity : ComponentActivity() {
 
     private fun showUtilityMenu(anchor: View) {
         PopupMenu(this, anchor).apply {
+            menu.add("Abbruch-/Timeout-Selbsttest").apply {
+                isEnabled = selectedModel != null && activeOperationJob == null
+                setOnMenuItemClickListener {
+                    runReliabilitySelfTest()
+                    true
+                }
+            }
             menu.add("CPU-Benchmark").apply {
                 isEnabled = selectedModel != null && activeOperationJob == null
                 setOnMenuItemClickListener {
@@ -652,6 +664,160 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Exercises the real Binder/JNI cancellation path against the currently loaded GGUF.
+     * This is an on-device diagnostic, not a substitute for a model-independent unit test.
+     */
+    private fun runReliabilitySelfTest() {
+        val model = selectedModel ?: run {
+            statusView.text = "Zuerst ein GGUF-Modell laden."
+            return
+        }
+        if (model.contextTokens < 256) {
+            statusView.text = "Selbsttest benötigt mindestens 256 Kontext-Tokens."
+            return
+        }
+
+        setBusy(true, cancelable = true)
+        statusView.text = "Abbruch-/Timeout-Selbsttest läuft …"
+        outputView.text = ""
+
+        activeOperationJob = activityScope.launch {
+            val results = mutableListOf<String>()
+            try {
+                val inference = engine()
+                val prefillUnits = (model.contextTokens * 0.40).toInt().coerceAtLeast(128)
+                val longPrompt = buildString(prefillUnits * 2) {
+                    repeat(prefillUnits) { append("a ") }
+                }
+
+                results += cancellationProbe(
+                    inference = inference,
+                    label = "Langprompt-Abbruch",
+                    prompt = longPrompt,
+                    maxOutputTokens = 1,
+                    delayMillis = 750L,
+                )
+                results += recoveryProbe(inference, "Recovery nach Langprompt-Abbruch")
+
+                results += cancellationProbe(
+                    inference = inference,
+                    label = "Decode-Abbruch",
+                    prompt = "Write a detailed explanation of local language model inference. " +
+                        "Cover tokenization, prompt prefill, KV cache, autoregressive decoding, " +
+                        "sampling and memory use. Continue until the output limit is reached.",
+                    maxOutputTokens = 8192,
+                    delayMillis = 2_500L,
+                )
+                results += recoveryProbe(inference, "Recovery nach Decode-Abbruch")
+
+                val timeoutFailure = try {
+                    withContext(Dispatchers.IO) {
+                        inference.generate(
+                            prompt = "Explain local language model inference in detail.",
+                            config = GenerationConfig(
+                                maxOutputTokens = 8192,
+                                timeoutMillis = 1_000L,
+                            ),
+                        )
+                    }
+                    null
+                } catch (error: InferenceEngineException) {
+                    error
+                }
+                check(timeoutFailure?.message?.contains("timed out", ignoreCase = true) == true) {
+                    "Der 1-Sekunden-Timeout wurde nicht ausgelöst."
+                }
+                results += "Timeout: 1-Sekunden-Deadline ausgelöst"
+                EngineDiagnostics.info("reliability_test", "timeout_confirmed", mapOf(
+                    "timeout_ms" to 1_000
+                ))
+                results += recoveryProbe(inference, "Recovery nach Timeout")
+
+                outputView.text = results.joinToString(separator = "\n")
+                statusView.text = "Selbsttest abgeschlossen · Abbruch, Timeout und Recovery erfolgreich"
+                EngineDiagnostics.info("reliability_test", "completed", mapOf(
+                    "checks" to results.size
+                ))
+            } catch (cancelled: CancellationException) {
+                statusView.text = "Abbruch-/Timeout-Selbsttest abgebrochen."
+                EngineDiagnostics.warn("reliability_test", "cancelled")
+                throw cancelled
+            } catch (error: Exception) {
+                results += "FEHLER: ${error.message ?: error.javaClass.simpleName}"
+                outputView.text = results.joinToString(separator = "\n")
+                statusView.text = "Selbsttest fehlgeschlagen · Diagnoseprotokoll exportieren"
+                EngineDiagnostics.error("reliability_test", "failed", mapOf(
+                    "error_class" to error.javaClass.simpleName
+                ))
+            } finally {
+                if (activeOperationJob === coroutineContext[Job]) {
+                    activeOperationJob = null
+                    setBusy(false)
+                }
+            }
+        }
+    }
+
+    private suspend fun cancellationProbe(
+        inference: AndroidLocalInferenceEngine,
+        label: String,
+        prompt: String,
+        maxOutputTokens: Int,
+        delayMillis: Long,
+    ): String = coroutineScope {
+        val probe = async(Dispatchers.IO) {
+            inference.generate(
+                prompt = prompt,
+                config = GenerationConfig(
+                    maxOutputTokens = maxOutputTokens,
+                    timeoutMillis = 600_000L,
+                ),
+            )
+        }
+
+        delay(delayMillis)
+        if (probe.isCompleted) {
+            val outcome = runCatching { probe.await() }
+            throw IllegalStateException(
+                "$label: Anfrage endete vor dem geplanten Abbruch" +
+                    outcome.exceptionOrNull()?.let { " (${it.javaClass.simpleName})" }.orEmpty()
+            )
+        }
+
+        probe.cancel(CancellationException("Reliability self-test: $label"))
+        withTimeout(15_000L) { probe.join() }
+        check(probe.isCancelled) { "$label: Coroutine wurde nicht abgebrochen." }
+        EngineDiagnostics.info("reliability_test", "cancellation_confirmed", mapOf(
+            "probe" to label,
+            "delay_ms" to delayMillis
+        ))
+        "$label: Abbruchsignal bestätigt"
+    }
+
+    private suspend fun recoveryProbe(
+        inference: AndroidLocalInferenceEngine,
+        label: String,
+    ): String {
+        val result = withTimeout(60_000L) {
+            withContext(Dispatchers.IO) {
+                inference.generate(
+                    prompt = "Answer briefly: what does a local language model do?",
+                    config = GenerationConfig(
+                        maxOutputTokens = 8,
+                        timeoutMillis = 45_000L,
+                    ),
+                )
+            }
+        }
+        EngineDiagnostics.info("reliability_test", "recovery_confirmed", mapOf(
+            "probe" to label,
+            "generated_tokens" to result.generatedTokens,
+            "elapsed_ms" to result.elapsedMillis
+        ))
+        "$label: Folgegenerierung erfolgreich (${result.generatedTokens} Tokens)"
     }
 
     private fun engine(): AndroidLocalInferenceEngine =
