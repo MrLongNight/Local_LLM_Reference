@@ -1,32 +1,72 @@
 # Local_LLM_Reference
 
-A small, reproducible Android reference implementation for evaluating local GGUF inference with llama.cpp.
+A modular Android reference engine for evaluating local GGUF inference with llama.cpp. The engine is separated from the sample UI so that another Android application can consume it without depending on this reference app.
 
-The repository is intentionally structured as an engine that can later be consumed by another Android application (including myDocAnizer) without taking a dependency on this reference UI.
-
-## Module boundaries
+## Modules
 
 | Module | Responsibility | Android dependency |
-| --- | --- | --- |
-| `:app` | Thin reference UI and manual device checks | Yes |
-| `:engine:api` | Stable engine contracts and platform-neutral data types | No |
-| `:engine:runtime` | Android model access, lifecycle and isolated inference process | Yes |
-| `:engine:native` | JNI bridge, CMake and pinned llama.cpp source | Yes |
-| `:benchmark` | Repeatable benchmark scenarios and structured results | Yes |
+|---|---|---|
+| `:app` | Thin reference client and future manual device checks | Yes |
+| `:engine:api` | Stable, platform-neutral contracts and data types | No |
+| `:engine:runtime` | SAF/file descriptor access, lifecycle, IPC and isolated process | Yes |
+| `:engine:native` | JNI/CMake and pinned llama.cpp implementation | Yes |
+| `:benchmark` | Independent benchmark scenarios and structured results | Yes |
 
-The app is an example client only. Engine behavior must not live in Activities, Compose screens or UI state holders.
+Dependency direction: app → runtime → native; runtime → api; app → benchmark → api. The engine has no dependency on app/UI code or DMS-specific services.
+
+## Current implementation
+
+- Modular Gradle project and platform-neutral API.
+- Exact llama.cpp upstream submodule pin.
+- Native CPU-only decoder path using the upstream llama API.
+- Original model file descriptor is passed to the isolated process; no model copy or rename is performed by the engine.
+- Inference runs in Android process `:llm_inference`, separate from the app process.
+- Generation cancellation is passed from the client through IPC to llama.cpp's CPU abort callback.
+- The initial sampler is deterministic greedy sampling. Decoder-only GGUF models are supported by this first reference path.
+
+The project is still under implementation. A completed Android build, APK artifact, and successful on-device inference have **not** yet been verified. The UI is currently a bootstrap screen; benchmark execution and device validation remain open.
+
+## Build
+
+Requirements: JDK 17, Android SDK platform 37, NDK 30.0.16248370 and CMake 3.31.6.
+
+Clone including the pinned submodule, then build:
+
+```bash
+git clone --recurse-submodules https://github.com/MrLongNight/Local_LLM_Reference.git
+cd Local_LLM_Reference
+./gradlew --no-daemon clean assembleDebug
+```
+
+The debug APK is produced at `app/build/outputs/apk/debug/app-debug.apk`. GitHub Actions verifies the wrapper and submodule pins, builds the APK and uploads it as `local-llm-reference-debug-apk`.
+
+## API boundaries
+
+The public API in `:engine:api` contains only Kotlin/JVM data types and suspend interfaces. Android `Uri`, `ParcelFileDescriptor`, Binder, JNI and llama.cpp objects stay inside runtime/native modules.
+
+Example model descriptor:
+
+```kotlin
+ModelDescriptor(
+    displayName = "Original model name",
+    sourceUri = selectedDocumentUri.toString(),
+    contextTokens = 2048,
+    threads = 0,
+)
+```
+
+The opaque URI is resolved inside the Android runtime. The current implementation accepts seekable `content://`, `file://` and local path sources.
 
 ## Engineering rules
 
-- Keep the public API in `:engine:api` free of Android, UI, JNI and llama.cpp types.
-- Keep llama.cpp implementation details inside `:engine:native`.
-- Keep Android-specific file access and process communication inside `:engine:runtime`.
-- Keep benchmark orchestration separate from production inference APIs.
-- Never commit GGUF models, model output, private diagnostics or device-specific paths.
-- Pin upstream llama.cpp to an exact commit; do not silently track a moving branch.
-- Establish a reproducible CPU reference before enabling additional backends such as Vulkan.
-- Report measured device results separately from build or host benchmark results.
+- Keep model and backend handling model-agnostic.
+- Pin all native source dependencies to exact upstream commits.
+- Keep the API free of Android, UI, JNI, llama.cpp, Room, vault and OCR types.
+- Keep the app process free of direct JNI/inference calls.
+- Never commit GGUF models, generated model output, private diagnostics or device-specific paths.
+- Do not describe build success as inference success, or infer performance from host/CI timings.
+- Optional Vulkan/OpenMP/CPU variants remain separate experiments until the CPU reference is reproducible and measured.
 
-## Current status
+## Maintenance
 
-Repository bootstrap. The first milestone is a clean, buildable module skeleton and CI. Native inference and the first on-device CPU baseline follow as separate implementation steps.
+See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for version selection, upstream compatibility checks and the update policy. Dependabot checks Gradle, GitHub Actions and the llama.cpp submodule weekly.
