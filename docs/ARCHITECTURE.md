@@ -26,6 +26,8 @@ All native model objects belong to the dedicated Android process `:llm_inference
 
 The runtime passes a duplicated, seekable file descriptor to llama.cpp and retains its owning `FILE*` until the model is freed. The engine does not copy or rename model files.
 
+The service currently owns a single native model slot. Each runtime client receives a process-unique session ID. A successful model load leases the slot to that client; generate and unload calls from any other client are rejected. Starting a replacement load clears the previous lease before native replacement, so a failed load cannot leave a stale client authorized to use the old slot.
+
 ## Thread defaults
 
 A thread count of zero is a sentinel meaning "use llama.cpp defaults". Runtime only overrides `n_threads` and `n_threads_batch` when the client explicitly requests a positive count. The default path therefore follows upstream platform behavior and is not hard-coded to a device core count.

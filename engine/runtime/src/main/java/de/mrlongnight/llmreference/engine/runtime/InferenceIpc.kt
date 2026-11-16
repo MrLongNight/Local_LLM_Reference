@@ -11,6 +11,7 @@ internal object InferenceIpc {
     const val STATUS_OK = 0
     const val STATUS_ERROR = 1
 
+    const val KEY_CLIENT_ID = "client_id"
     const val KEY_DESCRIPTOR = "model_descriptor"
     const val KEY_CONTEXT_TOKENS = "context_tokens"
     const val KEY_THREADS = "threads"

@@ -21,6 +21,7 @@ The API and benchmark source code contains no Android framework types. Both are 
 - Native CPU-only decoder path using the upstream llama API.
 - Original model file descriptor is passed to the isolated process; no model copy or rename is performed by the engine.
 - Inference runs in Android process `:llm_inference`, separate from the app process.
+- The service has one native model slot and leases it to the engine client instance that loaded it; another client cannot silently generate with or unload that model.
 - Generation cancellation is passed from the client through IPC to llama.cpp's CPU abort callback.
 - Reference app selects a GGUF file through Android's document picker, retains the provider URI and displays the original file name.
 - Reference app runs direct completion without assuming a model-specific chat template.

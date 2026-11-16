@@ -29,6 +29,7 @@ class InferenceService : Service() {
     private val requestStateLock = Any()
     private val pendingRequestIds = ConcurrentHashMap.newKeySet<Int>()
     private val cancelledRequestIds = ConcurrentHashMap.newKeySet<Int>()
+    private val modelSessionOwner = ModelSessionOwner()
     private val inferenceExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "LocalLLM-Inference")
     }
@@ -166,11 +167,24 @@ class InferenceService : Service() {
         val response = Bundle()
         val status = try {
             check(NativeLlama.nativeInitialize()) { "Native backend initialization failed." }
+            val clientId = message.data.getString(InferenceIpc.KEY_CLIENT_ID).orEmpty()
+            check(clientId.isNotBlank()) { "Missing engine client identity." }
             when (message.what) {
-                InferenceIpc.LOAD_MODEL -> loadModel(message.data)
-                InferenceIpc.GENERATE -> generate(message.arg1, message.data, response)
+                InferenceIpc.LOAD_MODEL -> {
+                    // One native model slot exists in this process. Clear the old lease before
+                    // replacement so a failed load cannot leave another client using stale state.
+                    modelSessionOwner.resetForLoad()
+                    loadModel(message.data)
+                    modelSessionOwner.claim(clientId)
+                }
+                InferenceIpc.GENERATE -> {
+                    modelSessionOwner.requireOwner(clientId)
+                    generate(message.arg1, message.data, response)
+                }
                 InferenceIpc.UNLOAD_MODEL -> {
+                    modelSessionOwner.requireOwner(clientId)
                     NativeLlama.nativeUnloadModel()
+                    modelSessionOwner.release(clientId)
                     EngineDiagnostics.info("model", "unloaded")
                 }
                 InferenceIpc.SYSTEM_INFO -> response.putString(

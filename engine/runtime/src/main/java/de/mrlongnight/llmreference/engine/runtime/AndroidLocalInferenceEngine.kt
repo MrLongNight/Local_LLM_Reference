@@ -18,6 +18,7 @@ import de.mrlongnight.llmreference.engine.api.GenerationResult
 import de.mrlongnight.llmreference.engine.api.LocalInferenceEngine
 import de.mrlongnight.llmreference.engine.api.ModelDescriptor
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -37,6 +38,7 @@ class InferenceEngineException(message: String, cause: Throwable? = null) : Exce
  */
 class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     private val appContext = context.applicationContext
+    private val clientId = UUID.randomUUID().toString()
     private val operationMutex = Mutex()
     private val pending = ConcurrentHashMap<Int, CancellableContinuation<Bundle>>()
 
@@ -148,6 +150,7 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
 
     private suspend fun request(command: Int, payload: Bundle = Bundle()): Bundle =
         operationMutex.withLock {
+            payload.putString(InferenceIpc.KEY_CLIENT_ID, clientId)
             val remote = ensureBound()
             val requestId = InferenceRequestIds.next()
             EngineDiagnostics.info("ipc", "request_queued", mapOf(

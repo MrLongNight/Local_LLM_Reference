@@ -16,6 +16,7 @@ Last updated: 2026-11-16
 - [x] Native cancellation is checked before prompt conversion and immediately after non-interruptible tokenization.
 - [x] JNI empty-string conversion does not pass a potentially null buffer to `NewString`.
 - [x] `threads=0` now preserves llama.cpp's own default; positive values explicitly override both thread pools.
+- [x] Native model slot is leased to the engine client that loaded it; cross-client generate/unload requests are rejected and failed replacement loads invalidate the old lease.
 - [x] Gradle 9.9.1 wrapper with official wrapper-JAR and distribution SHA-256 pins.
 - [x] Current stable GitHub Actions pinned to verified immutable commit SHAs.
 - [x] Android CLI version pinned to `1.1.16919734` with CI version gate.
@@ -29,6 +30,7 @@ Last updated: 2026-11-16
 - [x] Benchmark runner calculates prefill, generation and end-to-end throughput, averages and medians.
 - [x] Benchmark unit test verifies warmup exclusion and prefill/decode metric separation.
 - [x] Runtime concurrency test verifies 8,000 unique request IDs across eight concurrent clients.
+- [x] Model session ownership tests cover client isolation, replacement-load invalidation and blank identities.
 
 ## Verified
 
