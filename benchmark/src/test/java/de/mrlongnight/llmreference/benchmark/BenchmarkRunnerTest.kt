@@ -5,6 +5,7 @@ import de.mrlongnight.llmreference.engine.api.GenerationResult
 import de.mrlongnight.llmreference.engine.api.LocalInferenceEngine
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class BenchmarkRunnerTest {
@@ -37,6 +38,29 @@ class BenchmarkRunnerTest {
         assertEquals(10.0, report.averagePromptTokensPerSecond, 0.001)
         assertEquals(8.0, report.averageGenerationTokensPerSecond, 0.001)
         assertEquals(8.0, report.medianGenerationTokensPerSecond, 0.001)
+    }
+
+    @Test
+    fun csvEscapesMetadataWithoutChangingItsContents() = runBlocking {
+        val metadata = BenchmarkMetadata(
+            modelFileName = "model,revision\"2\".gguf",
+            nativeSystemInfo = "GPU Vulkan,\nMali-G57",
+        )
+        val report = BenchmarkRunner().run(
+            engine = FakeInferenceEngine(results = listOf(result(generatedTokens = 2))),
+            modelDisplayName = "fixture.gguf",
+            backendLabel = "CPU",
+            plan = BenchmarkPlan(
+                prompt = "fixed diagnostic prompt",
+                warmupRuns = 0,
+                measuredRuns = 1,
+                metadata = metadata,
+            ),
+        )
+
+        val csv = report.toCsv()
+        assertTrue(csv.contains("meta,model_file_name,\"model,revision\"\"2\"\".gguf\""))
+        assertTrue(csv.contains("meta,native_system_info,\"GPU Vulkan,\nMali-G57\""))
     }
 
     private fun result(generatedTokens: Int) = GenerationResult(

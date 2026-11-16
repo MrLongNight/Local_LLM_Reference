@@ -76,7 +76,9 @@ object EngineDiagnostics {
         // Enforce the new hard cap immediately when upgrading from an older .log format.
         listOf(
             File(directory, "$process.log"),
-            File(directory, "$process.log.1")
+            File(directory, "$process.log.1"),
+            File(directory, "interactions.log"),
+            File(directory, "interactions.log.1")
         ).forEach { existing ->
             if (existing.exists() && existing.length() > MAX_FILE_BYTES && !existing.delete()) {
                 android.util.Log.e("EngineDiagnostics", "Could not remove oversized diagnostics log")

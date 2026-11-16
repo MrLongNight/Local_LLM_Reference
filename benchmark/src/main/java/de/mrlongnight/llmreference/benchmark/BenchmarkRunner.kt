@@ -89,9 +89,13 @@ data class BenchmarkReport(
     /** Metadata and timings only: no prompt/output text, content URI or absolute path. */
     fun toCsv(): String = buildString {
         appendLine("section,key,value")
+        fun csvCell(value: Any?): String {
+            val raw = value?.toString().orEmpty()
+            val needsQuotes = raw.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
+            return if (needsQuotes) "\"" + raw.replace("\"", "\"\"") + "\"" else raw
+        }
         fun meta(key: String, value: Any?) {
-            val safe = value?.toString().orEmpty().replace(",", ";").replace("\n", " ")
-            append("meta,").append(key).append(',').append(safe).appendLine()
+            append("meta,").append(csvCell(key)).append(',').append(csvCell(value)).appendLine()
         }
         meta("model_file_name", metadata.modelFileName)
         meta("model_sha256", metadata.modelSha256)
