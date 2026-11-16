@@ -40,13 +40,32 @@ if(ANDROID)
         NO_CMAKE_FIND_ROOT_PATH
         REQUIRED
     )
-    if(NOT EXISTS "${_host_vulkan_include_dir}/vulkan/vulkan.hpp")
-        message(FATAL_ERROR "Host Vulkan C++ header not found: ${_host_vulkan_include_dir}/vulkan/vulkan.hpp")
-    endif()
+    find_path(_host_spirv_include_dir
+        NAMES spirv/unified1/spirv.hpp
+        HINTS "$ENV{VULKAN_SDK}/Include" "$ENV{VULKAN_SDK}/include"
+        PATHS /usr/include /usr/local/include
+        NO_CMAKE_FIND_ROOT_PATH
+        REQUIRED
+    )
     set(Vulkan_INCLUDE_DIR "${_host_vulkan_include_dir}" CACHE PATH "" FORCE)
-    # NDK clang replaces host default include paths with the Android sysroot. Pass the
-    # host Vulkan-Hpp path explicitly; CMake may otherwise suppress /usr/include as implicit.
-    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-I${_host_vulkan_include_dir}>")
+
+    # Never add host /usr/include to an Android compile: that would leak glibc headers
+    # into NDK clang. Stage only the Vulkan, vk_video and SPIR-V header trees instead.
+    set(_host_graphics_headers "${CMAKE_CURRENT_BINARY_DIR}/host-graphics-headers")
+    file(MAKE_DIRECTORY "${_host_graphics_headers}")
+    foreach(_header_tree vulkan vk_video)
+        if(EXISTS "${_host_vulkan_include_dir}/${_header_tree}")
+            file(COPY "${_host_vulkan_include_dir}/${_header_tree}" DESTINATION "${_host_graphics_headers}")
+        endif()
+    endforeach()
+    file(COPY "${_host_spirv_include_dir}/spirv" DESTINATION "${_host_graphics_headers}")
+    if(NOT EXISTS "${_host_graphics_headers}/vulkan/vulkan.hpp")
+        message(FATAL_ERROR "Staged Vulkan C++ header is missing.")
+    endif()
+    if(NOT EXISTS "${_host_graphics_headers}/spirv/unified1/spirv.hpp")
+        message(FATAL_ERROR "Staged SPIR-V header is missing.")
+    endif()
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-I${_host_graphics_headers}>")
     if(ANDROID_ABI STREQUAL "arm64-v8a")
         set(_vulkan_android_triple "aarch64-linux-android")
     elseif(ANDROID_ABI STREQUAL "x86_64")
