@@ -24,6 +24,8 @@ internal object InferenceIpc {
     const val KEY_TOP_P = "top_p"
     const val KEY_TOP_K = "top_k"
     const val KEY_SEED = "seed"
+    const val KEY_CHAT_ROLES = "chat_roles"
+    const val KEY_CHAT_CONTENTS = "chat_contents"
     const val KEY_TEXT = "text"
     const val KEY_PROMPT_TOKENS = "prompt_tokens"
     const val KEY_GENERATED_TOKENS = "generated_tokens"
