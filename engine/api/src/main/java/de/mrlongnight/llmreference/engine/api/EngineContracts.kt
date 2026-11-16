@@ -11,9 +11,10 @@ data class ModelDescriptor(
     val threads: Int = 0,
 )
 
-/** Per-generation settings supported by the deterministic CPU reference backend. */
+/** Controls a single generation request, including its client-side deadline. */
 data class GenerationConfig(
     val maxOutputTokens: Int = 256,
+    val timeoutMillis: Long = 180_000L,
 )
 
 data class GenerationResult(
