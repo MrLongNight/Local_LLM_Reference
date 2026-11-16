@@ -25,7 +25,6 @@ import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
@@ -76,11 +75,21 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
     override suspend fun generate(prompt: String, config: GenerationConfig): GenerationResult {
         require(prompt.isNotBlank()) { "Prompt must not be empty." }
         require(config.maxOutputTokens in 1..8192) { "Output token limit must be between 1 and 8192." }
+        require(config.timeoutMillis in 1_000L..600_000L) { "Generation timeout must be between 1 second and 10 minutes." }
         val payload = Bundle().apply {
             putString(InferenceIpc.KEY_PROMPT, prompt)
             putInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, config.maxOutputTokens)
         }
-        val result = request(InferenceIpc.GENERATE, payload)
+        val result = try {
+            withTimeout(config.timeoutMillis) {
+                request(InferenceIpc.GENERATE, payload)
+            }
+        } catch (error: TimeoutCancellationException) {
+            throw InferenceEngineException(
+                "Generation timed out after ${config.timeoutMillis} ms; native work was asked to abort.",
+                error
+            )
+        }
         return GenerationResult(
             text = result.getString(InferenceIpc.KEY_TEXT).orEmpty(),
             promptTokens = result.getInt(InferenceIpc.KEY_PROMPT_TOKENS),
@@ -108,7 +117,18 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
             }
             kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
                 pending[requestId] = continuation
-                continuation.invokeOnCancellation { pending.remove(requestId) }
+                continuation.invokeOnCancellation {
+                    pending.remove(requestId)
+                    if (command == InferenceIpc.GENERATE) {
+                        try {
+                            remote.send(Message.obtain(null, InferenceIpc.CANCEL_GENERATION).apply {
+                                arg1 = requestId
+                            })
+                        } catch (_: RemoteException) {
+                            // The isolated process may already have exited.
+                        }
+                    }
+                }
                 val message = Message.obtain(null, command).apply {
                     arg1 = requestId
                     data = payload
@@ -118,9 +138,11 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                     remote.send(message)
                 } catch (error: RemoteException) {
                     pending.remove(requestId)
-                    continuation.resumeWithException(
-                        InferenceEngineException("Inference process is unavailable.", error)
-                    )
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(
+                            InferenceEngineException("Inference process is unavailable.", error)
+                        )
+                    }
                     disconnect()
                 }
             }
@@ -137,9 +159,11 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
                                 val messenger = service?.let(::Messenger)
                                 if (messenger == null) {
-                                    continuation.resumeWithException(
-                                        InferenceEngineException("Inference service returned no binder.")
-                                    )
+                                    if (continuation.isActive) {
+                                        continuation.resumeWithException(
+                                            InferenceEngineException("Inference service returned no binder.")
+                                        )
+                                    }
                                     disconnect(this)
                                 } else if (continuation.isActive) {
                                     remoteMessenger = messenger
@@ -156,13 +180,20 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
 
                             override fun onBindingDied(name: ComponentName?) {
                                 failPending("Inference service binding died.")
+                                if (continuation.isActive) {
+                                    continuation.resumeWithException(
+                                        InferenceEngineException("Inference service binding died.")
+                                    )
+                                }
                                 disconnect(this)
                             }
 
                             override fun onNullBinding(name: ComponentName?) {
-                                continuation.resumeWithException(
-                                    InferenceEngineException("Inference service returned a null binding.")
-                                )
+                                if (continuation.isActive) {
+                                    continuation.resumeWithException(
+                                        InferenceEngineException("Inference service returned a null binding.")
+                                    )
+                                }
                                 disconnect(this)
                             }
                         }
@@ -175,9 +206,11 @@ class AndroidLocalInferenceEngine(context: Context) : LocalInferenceEngine {
                         isBound = bound
                         if (!bound) {
                             activeConnection = null
-                            continuation.resumeWithException(
-                                InferenceEngineException("Could not bind to the inference service.")
-                            )
+                            if (continuation.isActive) {
+                                continuation.resumeWithException(
+                                    InferenceEngineException("Could not bind to the inference service.")
+                                )
+                            }
                         }
                         continuation.invokeOnCancellation {
                             if (bound) {
