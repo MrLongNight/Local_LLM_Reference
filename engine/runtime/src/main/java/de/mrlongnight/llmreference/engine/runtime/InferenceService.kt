@@ -224,6 +224,8 @@ class InferenceService : Service() {
         val startedAt = SystemClock.elapsedRealtime()
         val contextTokens = data.getInt(InferenceIpc.KEY_CONTEXT_TOKENS, 2048)
         val threads = data.getInt(InferenceIpc.KEY_THREADS, 0)
+        val gpuLayers = data.getInt(InferenceIpc.KEY_GPU_LAYERS, 0)
+        val useVulkan = data.getBoolean(InferenceIpc.KEY_USE_VULKAN, false)
         EngineDiagnostics.info("model", "native_load_started", mapOf(
             "context_tokens" to contextTokens,
             "threads_requested" to threads
@@ -236,7 +238,7 @@ class InferenceService : Service() {
         } ?: error("Missing model file descriptor.")
 
         descriptor.use {
-            NativeLlama.nativeLoadModelFromFd(it.fd, contextTokens, threads)
+            NativeLlama.nativeLoadModelFromFd(it.fd, contextTokens, threads, gpuLayers, useVulkan)
         }
         EngineDiagnostics.info("model", "native_load_completed", mapOf(
             "elapsed_ms" to (SystemClock.elapsedRealtime() - startedAt),
@@ -262,6 +264,10 @@ class InferenceService : Service() {
         val prompt = data.getString(InferenceIpc.KEY_PROMPT)
             ?: error("Missing prompt.")
         val maxOutputTokens = data.getInt(InferenceIpc.KEY_MAX_OUTPUT_TOKENS, 256)
+        val temperature = data.getFloat(InferenceIpc.KEY_TEMPERATURE, 0f)
+        val topP = data.getFloat(InferenceIpc.KEY_TOP_P, 1f)
+        val topK = data.getInt(InferenceIpc.KEY_TOP_K, 0)
+        val seed = data.getInt(InferenceIpc.KEY_SEED, 42)
         EngineDiagnostics.info("generation", "native_generation_started", mapOf(
             "request_id" to requestId,
             "prompt_characters" to prompt.length,
@@ -269,7 +275,7 @@ class InferenceService : Service() {
         ) + EngineDiagnostics.memorySnapshot(this))
 
         try {
-            val text = NativeLlama.nativeGenerate(prompt, maxOutputTokens)
+            val text = NativeLlama.nativeGenerate(prompt, maxOutputTokens, temperature, topP, topK, seed)
                 ?: error("Native generation returned no result.")
             val promptTokens = NativeLlama.nativeLastPromptTokens()
             val generatedTokens = NativeLlama.nativeLastGeneratedTokens()
