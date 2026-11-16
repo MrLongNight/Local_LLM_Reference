@@ -212,13 +212,13 @@ class MainActivity : ComponentActivity() {
     private fun applyTheme() {
         val palette = if (darkModeEnabled) {
             ThemePalette(
-                background = Color.rgb(8, 11, 16),
-                surface = Color.rgb(22, 29, 39),
-                text = Color.rgb(238, 243, 250),
-                secondaryText = Color.rgb(174, 187, 202),
-                accent = Color.rgb(130, 190, 255),
-                inputTint = Color.rgb(130, 190, 255),
-                systemBar = Color.rgb(5, 7, 11),
+                background = Color.BLACK,
+                surface = Color.rgb(11, 14, 19),
+                text = Color.rgb(232, 237, 244),
+                secondaryText = Color.rgb(164, 176, 190),
+                accent = Color.rgb(158, 198, 255),
+                inputTint = Color.rgb(158, 198, 255),
+                systemBar = Color.BLACK,
             )
         } else {
             ThemePalette(
@@ -234,6 +234,7 @@ class MainActivity : ComponentActivity() {
 
         rootScrollView.setBackgroundColor(palette.background)
         rootContent.setBackgroundColor(palette.background)
+        window.decorView.setBackgroundColor(palette.background)
 
         fun tint(view: View) {
             when (view) {
@@ -261,12 +262,17 @@ class MainActivity : ComponentActivity() {
             }
         }
         tint(rootContent)
-        themeButton.text = if (darkModeEnabled) "Darstellung: Dunkel (tippen für Hell)" else {
+        themeButton.text = if (darkModeEnabled) "OLED-Dunkelmodus: EIN (tippen für Hell)" else {
             "Darstellung: Hell (tippen für Dunkel)"
         }
 
         window.statusBarColor = palette.systemBar
         window.navigationBarColor = palette.systemBar
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            // Keep Android from applying a light contrast scrim over the OLED-black bars.
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
         var systemUi = 0
         if (!darkModeEnabled) {
             systemUi = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR

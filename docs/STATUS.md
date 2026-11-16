@@ -31,6 +31,9 @@ Last updated: 2026-11-16
 - [x] Benchmark unit test verifies warmup exclusion and prefill/decode metric separation.
 - [x] Runtime concurrency test verifies 8,000 unique request IDs across eight concurrent clients.
 - [x] Model session ownership tests cover client isolation, replacement-load invalidation and blank identities.
+- [x] Persistent OLED-black default theme with manual light-mode toggle and low-glare system bars.
+- [x] Process-separated JSONL diagnostics with bounded asynchronous writes, rotation, central privacy redaction and ZIP export.
+- [x] Diagnostic privacy policy tests cover sensitive keys, URIs, absolute paths, value limits and safe performance counters.
 
 ## Verified
 
@@ -38,7 +41,7 @@ Last updated: 2026-11-16
 - [x] Immutable GitHub Actions SHA pins and thread-default correction built successfully (run 43813347672).
 - [x] Current full verification, including model-session ownership tests: Android CLI `1.1.16919734` version gate, dependency pin checks, unit tests, Android lint, clean native builds for arm64-v8a and x86_64, and debug APK upload all succeeded on commit `a2a2373e8d5059f727b559209bec20999e409290` (run 43815308166).
 - [x] APK artifact `local-llm-reference-debug-apk`: 31,880,247 bytes, SHA-256 `93d38d8fb26fe8ea9b6f01124c1708c33f08aa46abdc14174dd98d5a7bc969b5`.
-- [ ] APK installation and GGUF load/generation smoke test on a physical device.
+- [x] User-confirmed physical-device test completed without reported errors (2026-11-16; exact device/model/scenario details were not supplied).
 - [ ] Cancellation/timeout behavior verified on a physical device.
 - [ ] Repeatable benchmark measurements on the target device.
 

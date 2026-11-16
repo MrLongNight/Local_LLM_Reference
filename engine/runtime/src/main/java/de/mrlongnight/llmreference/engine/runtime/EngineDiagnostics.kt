@@ -12,39 +12,63 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
  * Process-aware structured diagnostics shared by the app and isolated inference service.
  *
- * Each process writes its own JSON Lines file. Prompts, generated text, document/model URIs,
- * absolute paths and credentials are deliberately excluded from log attributes.
+ * Each process writes its own JSON Lines file. Disk work is serialized on a bounded background
+ * writer so logging from the UI thread never performs file I/O or fsync. Sensitive attributes are
+ * redacted centrally before serialization; callers must still prefer metadata over user content.
  */
 object EngineDiagnostics {
     private const val DIRECTORY_NAME = "diagnostics"
     private const val MAX_FILE_BYTES = 2L * 1024L * 1024L
     private const val TIMESTAMP_PATTERN = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    private const val MAX_QUEUED_RECORDS = 4_096
+    private const val EXPORT_FLUSH_TIMEOUT_SECONDS = 10L
 
     private val lock = Any()
+    private val droppedRecords = AtomicLong(0L)
+    private val writer = ThreadPoolExecutor(
+        1,
+        1,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue(MAX_QUEUED_RECORDS),
+        ThreadFactory { runnable ->
+            Thread(runnable, "LocalLLM-Diagnostics").apply { isDaemon = true }
+        },
+        ThreadPoolExecutor.AbortPolicy()
+    )
+
     @Volatile private var logDirectory: File? = null
     @Volatile private var processName: String = "unknown"
 
     fun initialize(context: Context, process: String) {
+        val directory = File(context.applicationContext.filesDir, DIRECTORY_NAME)
+        if (!directory.exists() && !directory.mkdirs()) {
+            android.util.Log.e("EngineDiagnostics", "Could not create diagnostics directory")
+            return
+        }
         synchronized(lock) {
-            val directory = File(context.applicationContext.filesDir, DIRECTORY_NAME)
-            if (!directory.exists() && !directory.mkdirs()) {
-                android.util.Log.e("EngineDiagnostics", "Could not create diagnostics directory")
-                return
-            }
             logDirectory = directory
             processName = process
-            writeLocked("INFO", "diagnostics", "logger_initialized", mapOf(
-                "sdk_int" to Build.VERSION.SDK_INT,
-                "manufacturer" to Build.MANUFACTURER,
-                "device" to Build.DEVICE
-            ))
         }
+        info("diagnostics", "logger_initialized", mapOf(
+            "sdk_int" to Build.VERSION.SDK_INT,
+            "manufacturer" to Build.MANUFACTURER,
+            "device" to Build.DEVICE
+        ))
     }
 
     fun info(component: String, event: String, attributes: Map<String, Any?> = emptyMap()) =
@@ -57,50 +81,74 @@ object EngineDiagnostics {
         write("ERROR", component, event, attributes)
 
     private fun write(level: String, component: String, event: String, attributes: Map<String, Any?>) {
-        synchronized(lock) { writeLocked(level, component, event, attributes) }
-    }
-
-    private fun writeLocked(
-        level: String,
-        component: String,
-        event: String,
-        attributes: Map<String, Any?>
-    ) {
         val directory = logDirectory ?: return
-        val target = File(directory, "${processName}.jsonl")
-        try {
-            val record = JSONObject().apply {
+        val process = processName
+        val safeAttributes = DiagnosticAttributePolicy.sanitize(attributes).toMutableMap()
+        val droppedBeforeRecord = droppedRecords.getAndSet(0L)
+        if (droppedBeforeRecord > 0L) {
+            safeAttributes["dropped_records_before_this_event"] = droppedBeforeRecord
+        }
+
+        val callerThread = Thread.currentThread().name
+        val record = try {
+            JSONObject().apply {
                 put("timestamp_utc", timestamp())
                 put("level", level)
-                put("process", processName)
-                put("thread", Thread.currentThread().name)
+                put("process", process)
+                put("thread", callerThread)
                 put("component", component)
                 put("event", event)
                 put("attributes", JSONObject().apply {
-                    attributes.forEach { (key, value) ->
-                        if (value != null) put(key, value)
-                    }
+                    safeAttributes.forEach { (key, value) -> put(key, value) }
                 })
             }.toString() + "\n"
-            val bytes = record.toByteArray(Charsets.UTF_8)
+        } catch (failure: RuntimeException) {
+            android.util.Log.e("EngineDiagnostics", "Could not encode diagnostics record", failure)
+            droppedRecords.incrementAndGet()
+            return
+        }
+
+        val bytes = record.toByteArray(Charsets.UTF_8)
+        try {
+            writer.execute { appendRecord(directory, process, bytes, level, component, event) }
+        } catch (_: RejectedExecutionException) {
+            droppedRecords.incrementAndGet()
+            android.util.Log.w("EngineDiagnostics", "Diagnostics queue full; record dropped")
+        }
+
+        android.util.Log.println(
+            when (level) {
+                "ERROR" -> android.util.Log.ERROR
+                "WARN" -> android.util.Log.WARN
+                else -> android.util.Log.INFO
+            },
+            "EngineDiagnostics",
+            "$component/$event"
+        )
+    }
+
+    private fun appendRecord(
+        directory: File,
+        process: String,
+        bytes: ByteArray,
+        level: String,
+        component: String,
+        event: String
+    ) {
+        val target = File(directory, "$process.jsonl")
+        try {
             rotateIfNeeded(target, bytes.size.toLong())
             FileOutputStream(target, true).use { stream ->
                 stream.write(bytes)
-                stream.fd.sync()
             }
-            android.util.Log.println(
-                when (level) {
-                    "ERROR" -> android.util.Log.ERROR
-                    "WARN" -> android.util.Log.WARN
-                    else -> android.util.Log.INFO
-                },
-                "EngineDiagnostics",
-                "${component}/${event}"
-            )
         } catch (failure: IOException) {
-            android.util.Log.e("EngineDiagnostics", "Could not append diagnostics record", failure)
+            android.util.Log.e(
+                "EngineDiagnostics",
+                "Could not append $level $component/$event diagnostics record",
+                failure
+            )
         } catch (failure: RuntimeException) {
-            android.util.Log.e("EngineDiagnostics", "Could not encode diagnostics record", failure)
+            android.util.Log.e("EngineDiagnostics", "Diagnostics writer failed", failure)
         }
     }
 
@@ -115,16 +163,37 @@ object EngineDiagnostics {
         }
     }
 
+    private fun flushPendingWrites() {
+        try {
+            writer.submit {}.get(EXPORT_FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        } catch (failure: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IOException("Interrupted while flushing diagnostics.", failure)
+        } catch (failure: ExecutionException) {
+            throw IOException("Could not flush diagnostics.", failure.cause ?: failure)
+        } catch (failure: TimeoutException) {
+            throw IOException("Timed out while flushing diagnostics.", failure)
+        } catch (failure: RejectedExecutionException) {
+            throw IOException("Diagnostics writer is not accepting work.", failure)
+        }
+    }
+
     private fun timestamp(): String = SimpleDateFormat(TIMESTAMP_PATTERN, Locale.ROOT).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }.format(Date())
 
     /**
      * Writes the app and inference process logs into one ZIP archive at the user-selected URI.
-     * The export includes only the diagnostic directory, never model files or prompt/output data.
+     * The app-process queue is flushed before the snapshot. An in-flight event from the isolated
+     * process may be included in the next export, but all already-written service events are read.
      */
     @Throws(IOException::class)
     fun exportZip(context: Context, destination: Uri): Int {
+        info("diagnostics", "export_requested", mapOf(
+            "dropped_records_since_previous_event" to droppedRecords.get()
+        ))
+        flushPendingWrites()
+
         val directory = File(context.applicationContext.filesDir, DIRECTORY_NAME)
         val files = directory.listFiles()
             ?.filter { it.isFile && (it.name.endsWith(".jsonl") || it.name.endsWith(".jsonl.1")) }
@@ -149,9 +218,12 @@ object EngineDiagnostics {
                 Included log files: $exportedFiles
 
                 Format: UTF-8 JSON Lines (one structured event per line).
-                Privacy: prompts, generated text, model/document URIs, absolute paths and credentials
-                are intentionally excluded from diagnostic attributes.
-                Log files are process-separated and rotated at approximately 2 MiB per active file.
+                Each process writes its own log file. The active file is rotated at approximately
+                2 MiB and one previous segment is retained for export.
+                Disk writes use a bounded background queue. If it fills, dropped records are
+                counted and reported in the next successfully queued event.
+                Privacy: prompt/output text, content URIs, absolute paths, credentials and unknown
+                non-scalar attribute values are redacted before serialization.
             """.trimIndent()
             zip.putNextEntry(ZipEntry("README.txt"))
             zip.write(readme.toByteArray(Charsets.UTF_8))
