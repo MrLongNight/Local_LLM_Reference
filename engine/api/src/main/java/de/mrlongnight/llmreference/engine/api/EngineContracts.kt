@@ -1,26 +1,46 @@
 package de.mrlongnight.llmreference.engine.api
 
-/** Platform-neutral description of the original model selected by the client. */
+enum class InferenceBackend { CPU, VULKAN }
+
 data class ModelDescriptor(
     val displayName: String,
-    /** Opaque client-owned location; the runtime resolves it to a readable descriptor. */
     val sourceUri: String,
     val sizeBytes: Long? = null,
     val contextTokens: Int = 2048,
-    /** 0 lets the native backend choose its default. */
     val threads: Int = 0,
-)
+    val backend: InferenceBackend = InferenceBackend.CPU,
+    val gpuLayers: Int = 0,
+    val sha256: String? = null,
+) {
+    init {
+        require(displayName.isNotBlank())
+        require(sourceUri.isNotBlank())
+        require(contextTokens in 32..131072)
+        require(threads in 0..256)
+        require(gpuLayers == -1 || gpuLayers in 0..256)
+        require(backend != InferenceBackend.VULKAN || gpuLayers != 0)
+        require(sha256 == null || sha256.matches(Regex("[0-9a-f]{64}")))
+    }
+}
 
-/** Controls a single generation request, including its client-side deadline. */
 data class GenerationConfig(
     val maxOutputTokens: Int = 256,
     val timeoutMillis: Long = 180_000L,
-)
+    val temperature: Float = 0f,
+    val topP: Float = 1f,
+    val topK: Int = 0,
+    val seed: Int = 42,
+) {
+    init {
+        require(maxOutputTokens in 1..8192)
+        require(timeoutMillis in 1_000L..600_000L)
+        require(temperature.isFinite() && temperature in 0f..2f)
+        require(topP.isFinite() && topP > 0f && topP <= 1f)
+        require(topK in 0..1024)
+        require(seed >= 0)
+    }
+}
 
-/**
- * Result timing separates prompt prefill from token generation.
- * elapsedMillis is native end-to-end time from prefill start to sampler completion.
- */
 data class GenerationResult(
     val text: String,
     val promptTokens: Int,
