@@ -23,6 +23,13 @@ data class ModelDescriptor(
     }
 }
 
+data class ChatMessage(val role: String, val content: String) {
+    init {
+        require(role in setOf("system", "user", "assistant"))
+        require(content.isNotBlank())
+    }
+}
+
 data class GenerationConfig(
     val maxOutputTokens: Int = 256,
     val timeoutMillis: Long = 180_000L,
@@ -30,6 +37,8 @@ data class GenerationConfig(
     val topP: Float = 1f,
     val topK: Int = 0,
     val seed: Int = 42,
+    /** Non-empty messages enable the model's GGUF default chat template; raw completion stays unchanged otherwise. */
+    val chatMessages: List<ChatMessage> = emptyList(),
 ) {
     init {
         require(maxOutputTokens in 1..8192)
