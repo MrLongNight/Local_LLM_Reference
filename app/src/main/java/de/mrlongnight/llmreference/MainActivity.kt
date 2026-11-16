@@ -681,7 +681,7 @@ class MainActivity : ComponentActivity() {
                 if (chatModeEnabled && result.text.isNotBlank()) {
                     chatHistory += ChatMessage("user", userPrompt)
                     chatHistory += ChatMessage("assistant", result.text)
-                    outputView.text = chatHistory.joinToString("\\n\\n") { message ->
+                    outputView.text = chatHistory.joinToString("\n\n") { message ->
                         val speaker = if (message.role == "assistant") "Modell" else "Du"
                         "$speaker: ${message.content}"
                     }
